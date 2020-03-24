@@ -1,0 +1,6 @@
+local_settings.py
+sefaria_local_settings.py
+log.log
+static/*
+__pycache__/*
+.idea/*
