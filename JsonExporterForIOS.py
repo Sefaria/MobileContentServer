@@ -683,6 +683,24 @@ def export_packages(for_sources=False):
     write_doc(packages, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + PACK_PATH)
 
 
+def zip_packages():
+    packages = get_downloadable_packages()
+    bundle_path = f'{SEFARIA_EXPORT_PATH}/bundles'
+    curdir = os.getcwd()
+    os.chdir(EXPORT_PATH)
+    for package in packages:
+        package_name = package['en']
+        if package_name == 'COMPLETE LIBRARY':
+            titles = [i.title for i in model.library.all_index_records()]
+        else:
+            titles = package['indexes']
+        with zipfile.ZipFile(f'{package_name}.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+            for title in titles:
+                z.write(f'{title}.zip')
+        os.rename(f'{package_name}.zip', f'{bundle_path}/{package_name}.zip')
+    os.chdir(curdir)
+
+
 def export_hebrew_categories(for_sources=False):
     """
     Writes translation of all English categories into a single file.
@@ -931,3 +949,4 @@ if __name__ == '__main__':
     elif action == "write_last_updated":  # for updating package infor
         write_last_updated([], True)
     clear_bundles()
+    zip_packages()

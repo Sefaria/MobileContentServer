@@ -20,6 +20,7 @@ def create_zip_bundle():
     book_list = [f'{b}.zip' for b in request.json['books']]
     book_list = [b for b in book_list if os.path.exists(b)]
     if not book_list:
+        os.chdir(original_dir)
         return {'error': 'requested books not found'}
 
     zip_filename = get_bundle_filename(book_list)
