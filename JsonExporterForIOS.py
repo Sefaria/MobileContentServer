@@ -68,6 +68,8 @@ PACK_PATH         = "/packages.json"
 CALENDAR_PATH     = "/calendar.json"
 LAST_UPDATED_PATH = EXPORT_PATH + "/last_updated.json"
 
+standard_print = print
+print = logging.info
 
 
 def make_path(doc, format):
@@ -118,6 +120,7 @@ def export_texts(skip_existing=False):
     """
     indexes = model.library.all_index_records()
     for index in reversed(indexes):
+        print(index.title)
         if skip_existing and os.path.isfile("%s/%s.zip" % (EXPORT_PATH, index.title)):
             continue
         success = export_text(index)
