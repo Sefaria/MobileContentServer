@@ -4,27 +4,38 @@ import os
 import zipfile
 import hashlib
 from local_settings import *
-from JsonExporterForIOS import EXPORT_PATH
+from JsonExporterForIOS import keep_directory, SEFARIA_EXPORT_PATH, SCHEMA_VERSION
 from flask import Flask, request, Response
 
 app = Flask(__name__)
 
 
 @app.route('/makeBundle', methods=['POST'])
+@keep_directory
 def create_zip_bundle():
     if not request.json or not request.json.get('books'):
         return Response(status=400, response='Invalid JSON')
 
+    try:
+        schema_version = int(request.args.get('schema_version', SCHEMA_VERSION))
+    except ValueError:
+        schema_version = SCHEMA_VERSION
+    export_path = f'{SEFARIA_EXPORT_PATH}/{schema_version}'
+
     original_dir = os.getcwd()
-    os.chdir(EXPORT_PATH)
+    os.chdir(export_path)
     book_list = [f'{b}.zip' for b in request.json['books']]
     book_list = [b for b in book_list if os.path.exists(b)]
     if not book_list:
         os.chdir(original_dir)
         return {'error': 'requested books not found'}
 
+    bundle_path = f'{export_path}/bundles'
+    if not os.path.isdir(bundle_path):
+        os.mkdir(bundle_path)
+
     zip_filename = get_bundle_filename(book_list)
-    zip_path = f'{SEFARIA_EXPORT_PATH}/bundles/{zip_filename}'
+    zip_path = f'{bundle_path}/{zip_filename}'
     if not os.path.exists(zip_path):
         print(f'building new zip: {zip_filename}')
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:

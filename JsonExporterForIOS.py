@@ -72,6 +72,16 @@ standard_print = print
 print = logging.info
 
 
+def keep_directory(func):
+    def new_func(*args, **kwargs):
+        original_dir = os.getcwd()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            os.chdir(original_dir)
+    return new_func
+
+
 def make_path(doc, format):
     """
     Returns the full path and file name for exporting 'doc' in 'format'.
@@ -686,11 +696,16 @@ def export_packages(for_sources=False):
     write_doc(packages, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + PACK_PATH)
 
 
+@keep_directory
 def zip_packages():
     packages = get_downloadable_packages()
-    bundle_path = f'{SEFARIA_EXPORT_PATH}/bundles'
+    bundle_path = f'{EXPORT_PATH}/bundles'
+    if not os.path.isdir(bundle_path):
+        os.mkdir(bundle_path)
+
     curdir = os.getcwd()
     os.chdir(EXPORT_PATH)
+
     for package in packages:
         package_name = package['en']
         if package_name == 'COMPLETE LIBRARY':
@@ -701,6 +716,7 @@ def zip_packages():
             for title in titles:
                 z.write(f'{title}.zip')
         os.rename(f'{package_name}.zip', f'{bundle_path}/{package_name}.zip')
+
     os.chdir(curdir)
 
 
@@ -906,9 +922,13 @@ def export_base_files_to_sources():
     export_packages(for_sources=True)  # relies on full dump to be available to measure file sizes
 
 
+@keep_directory
 def clear_bundles():
     curdir = os.getcwd()
-    os.chdir(f'{SEFARIA_EXPORT_PATH}/bundles')
+    try:
+        os.chdir(f'{EXPORT_PATH}/bundles')
+    except FileNotFoundError:
+        return
     for f in os.listdir('.'):
         if os.path.isfile(f):
             os.remove(f)
