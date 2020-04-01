@@ -9,7 +9,6 @@ except ImportError:
     import re
 import json
 import zipfile
-import logging
 import glob
 import time
 import traceback
@@ -67,9 +66,6 @@ PEOPLE_PATH       = "/people.json"
 PACK_PATH         = "/packages.json"
 CALENDAR_PATH     = "/calendar.json"
 LAST_UPDATED_PATH = EXPORT_PATH + "/last_updated.json"
-
-standard_print = print
-print = logging.info
 
 
 def keep_directory(func):
