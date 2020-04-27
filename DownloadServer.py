@@ -65,13 +65,5 @@ def update():
     return {'status': 'ok'}
 
 
-"""
-Lorenzo talk:
-1) make a post endpoint that will zip files together and return a filename
-2) Serve bundles as static files
-3) Packages can have a reserved filename and won't need to go through the zip build
-4) Make the dump a part of the Flask app. We'll use a cronjob to trigger the dump. Triggering the dump will require
-a kubernetes secret. Without the secret, you'll get a Forbidden response.
-"""
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=True)
