@@ -426,6 +426,15 @@ class TextAndLinksForIndex:
                 merged_version = 'Merged from {}'.format(', '.join(all_versions))
                 return merged_version, None, None, None, None, None
 
+        def get_text_array(sections, ja_lang):
+            if sections:
+                try:
+                    return self._text_map[node_title][ja_lang].get_element([j-1 for j in sections])
+                except IndexError:
+                    return []
+            else:  # Ref(Pesach Haggadah, Kadesh) does not have sections, although it is a section ref
+                return self._text_map[node_title][ja_lang].array()
+
         node_title = oref.index_node.full_title()
         en_chunk, he_chunk = self._text_map[node_title]['en_chunk'], self._text_map[node_title]['en_chunk']
         en_vtitle, en_vnotes, en_vlicense, en_vsource, en_vtitle_he, en_vnotes_he = get_version_title(en_chunk)
@@ -456,14 +465,8 @@ class TextAndLinksForIndex:
         if he_vnotes_he:
             data['heVersionNotesInHebrew'] = he_vnotes_he
 
-        try:
-            en_text = self._text_map[node_title]['en_ja'].get_element([j-1 for j in oref.sections])
-        except IndexError:
-            en_text = []
-        try:
-            he_text = self._text_map[node_title]['he_ja'].get_element([j-1 for j in oref.sections])
-        except IndexError:
-            he_text = []
+        en_text = get_text_array(oref.sections, 'en_ja')
+        he_text = get_text_array(oref.sections, 'he_ja')
 
         en_len = len(en_text)
         he_len = len(he_text)
@@ -710,7 +713,10 @@ def zip_packages():
             titles = package['indexes']
         with zipfile.ZipFile(f'{package_name}.zip', 'w', zipfile.ZIP_DEFLATED) as z:
             for title in titles:
-                z.write(f'{title}.zip')
+                try:
+                    z.write(f'{title}.zip')
+                except FileNotFoundError:
+                    print(f"No zip file for {title}; the bundle for package {package['en']} will be missing this text")
         os.rename(f'{package_name}.zip', f'{bundle_path}/{package_name}.zip')
 
     os.chdir(curdir)
@@ -935,19 +941,19 @@ if __name__ == '__main__':
     # we've been experiencing many issues with strange books appearing in the toc. i believe this line should solve that
     model.library.rebuild_toc()
     action = sys.argv[1] if len(sys.argv) > 1 else None
-    index = sys.argv[2] if len(sys.argv) > 2 else None
+    index_title = sys.argv[2] if len(sys.argv) > 2 else None
     if action == "export_all":
         export_all()
     elif action == "export_all_skip_existing":
         export_all(skip_existing=True)
     elif action == "export_text":
-        if not index:
+        if not index_title:
             print("To export_index, please provide index title")
         else:
-            export_text(index, update=True)
+            export_text(index_title, update=True)
     elif action == "export_updated":
         export_updated()
-    elif action == "purge_cloudflare": #purge general toc and last_updated files
+    elif action == "purge_cloudflare":  # purge general toc and last_updated files
         if USE_CLOUDFLARE:
             purge_cloudflare_cache([])
         else:
