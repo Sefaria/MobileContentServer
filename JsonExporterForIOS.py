@@ -66,6 +66,7 @@ PEOPLE_PATH       = "/people.json"
 PACK_PATH         = "/packages.json"
 CALENDAR_PATH     = "/calendar.json"
 LAST_UPDATED_PATH = EXPORT_PATH + "/last_updated.json"
+MAX_FILE_SIZE = 100e6
 
 
 def keep_directory(func):
@@ -695,6 +696,45 @@ def export_packages(for_sources=False):
     write_doc(packages, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + PACK_PATH)
 
 
+def split_list(l, size):
+    chunks = int(len(l) / size)
+    values = [l[i*size:(i+1)*size] for i in range(chunks)]
+    last_bit = l[chunks*size:len(l)]
+    if last_bit:
+        values.append(last_bit)
+    return values
+
+
+def build_split_archive(book_list, build_loc, archive_size=MAX_FILE_SIZE):
+    if os.path.exists(build_loc):
+        try:
+            rmtree(build_loc)
+        except NotADirectoryError:
+            os.remove(build_loc)
+    os.mkdir(build_loc)
+    z, current_size, i, filenames = None, 0, 0, []
+    for title in book_list:
+        if not z:
+            i += 1
+            filename = f'{build_loc}/{i}.zip'
+            z = zipfile.ZipFile(filename, 'w', zipfile.ZIP_DEFLATED)
+            current_size = 0
+            filenames.append(filename)
+        try:
+            z.write(title)
+        except FileNotFoundError:
+            print(f"No zip file for {title}; the bundles will be missing this text")
+            continue
+        current_size += z.getinfo(title).compress_size
+        if current_size > archive_size:
+            z.close()
+            z = None
+    if z:
+        z.close()
+
+    return [os.path.basename(f) for f in filenames]
+
+
 @keep_directory
 def zip_packages():
     packages = get_downloadable_packages()
@@ -707,17 +747,13 @@ def zip_packages():
 
     for package in packages:
         package_name = package['en']
+        print(package_name)
         if package_name == 'COMPLETE LIBRARY':
             titles = [i.title for i in model.library.all_index_records()]
         else:
             titles = package['indexes']
-        with zipfile.ZipFile(f'{package_name}.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-            for title in titles:
-                try:
-                    z.write(f'{title}.zip')
-                except FileNotFoundError:
-                    print(f"No zip file for {title}; the bundle for package {package['en']} will be missing this text")
-        os.rename(f'{package_name}.zip', f'{bundle_path}/{package_name}.zip')
+        titles = [f'{t}.zip' for t in titles]
+        build_split_archive(titles, f'{bundle_path}/{package_name}')
 
     os.chdir(curdir)
 
@@ -882,6 +918,8 @@ def purge_cloudflare_cache(titles):
     """
     Purges the URL for each zip file named in `titles` as well as toc.json, last_updated.json and calendar.json.
     """
+    if not titles:
+        titles = [t.title for t in model.library.all_index_records()]
     files = ["%s/%s/%s.zip" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in titles]
     files += ["%s/%s/%s.json" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in ("toc", "search_toc", "last_updated", "calendar", "hebrew_categories", "people", "packages")]
     url = 'https://api.cloudflare.com/client/v4/zones/%s/purge_cache' % CLOUDFLARE_ZONE

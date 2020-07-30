@@ -4,10 +4,21 @@ import os
 import zipfile
 import hashlib
 from local_settings import *
-from JsonExporterForIOS import keep_directory, SEFARIA_EXPORT_PATH, SCHEMA_VERSION
-from flask import Flask, request, Response
+from JsonExporterForIOS import keep_directory, build_split_archive, SEFARIA_EXPORT_PATH, SCHEMA_VERSION
+from flask import Flask, request, Response, jsonify
 
 app = Flask(__name__)
+URL_BASE = 'static/ios-export'
+
+
+def url_stubs(bundle_path, schema_version):
+    bundle_name = os.path.basename(bundle_path)
+    try:
+        values = [f'{URL_BASE}/{schema_version}/bundles/{bundle_name}/{f}' for f in os.listdir(bundle_path)]
+    except FileNotFoundError:
+        values = []
+    values.sort()
+    return values
 
 
 @app.route('/makeBundle', methods=['POST'])
@@ -36,14 +47,28 @@ def create_zip_bundle():
 
     zip_filename = get_bundle_filename(book_list)
     zip_path = f'{bundle_path}/{zip_filename}'
-    if not os.path.exists(zip_path):
+    if os.path.exists(zip_path):
+        filenames = os.listdir(zip_path)
+    else:
         print(f'building new zip: {zip_filename}')
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
-            for b in book_list:
-                z.write(b)
+        filenames = build_split_archive(book_list, zip_path)
 
     os.chdir(original_dir)
-    return {'bundle': zip_filename}
+    return jsonify(url_stubs(zip_path, schema_version))
+
+
+@app.route('/packageData', methods=['GET'])
+def get_package_paths():
+    if not request.args or not request.args.get('package'):
+        return jsonify([])
+    package_name = request.args['package']
+    try:
+        schema_version = int(request.args.get('schema_version', SCHEMA_VERSION))
+    except ValueError:
+        schema_version = SCHEMA_VERSION
+
+    base_path = f'{SEFARIA_EXPORT_PATH}/{schema_version}/bundles'
+    return jsonify(url_stubs(f'{base_path}/{package_name}', schema_version))
 
 
 def get_bundle_filename(book_list: list) -> str:
