@@ -972,6 +972,8 @@ def clear_bundles():
     for f in os.listdir('.'):
         if os.path.isfile(f):
             os.remove(f)
+        else:
+            rmtree(f)
     os.chdir(curdir)
 
 
