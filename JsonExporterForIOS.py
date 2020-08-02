@@ -914,6 +914,22 @@ def clear_exports():
         rmtree(EXPORT_PATH)
 
 
+def recursive_listdir(path):
+    file_list, sub_dirs = [], []
+
+    def recurse(r_path):
+        nonlocal file_list, sub_dirs
+        for f in os.listdir(r_path):
+            if os.path.isfile(f'{r_path}/{f}'):
+                file_list.append(f'{"/".join(sub_dirs)}/{f}')
+            else:
+                sub_dirs.append(f)
+                recurse(f'{r_path}/{f}')
+                sub_dirs.pop()
+    recurse(path)
+    return file_list
+
+
 def purge_cloudflare_cache(titles):
     """
     Purges the URL for each zip file named in `titles` as well as toc.json, last_updated.json and calendar.json.
@@ -922,6 +938,7 @@ def purge_cloudflare_cache(titles):
         titles = [t.title for t in model.library.all_index_records()]
     files = ["%s/%s/%s.zip" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in titles]
     files += ["%s/%s/%s.json" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in ("toc", "search_toc", "last_updated", "calendar", "hebrew_categories", "people", "packages")]
+    files += [f'{CLOUDFLARE_PATH}/{SCHEMA_VERSION}/{f}' for f in recursive_listdir('./static/ios-export/6/bundles')]
     url = 'https://api.cloudflare.com/client/v4/zones/%s/purge_cache' % CLOUDFLARE_ZONE
     payload = {"files": files}
     headers = {

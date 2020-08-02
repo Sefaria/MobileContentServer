@@ -73,7 +73,7 @@ def get_package_paths():
 
 def get_bundle_filename(book_list: list) -> str:
     books_hash = hashlib.sha1('|'.join(sorted(book_list)).encode('utf-8')).hexdigest()
-    return f'{books_hash}.zip'
+    return f'{books_hash}'
 
 
 @app.route('/update')
