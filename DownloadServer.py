@@ -4,8 +4,14 @@ import os
 import zipfile
 import hashlib
 from local_settings import *
-from JsonExporterForIOS import keep_directory, build_split_archive, SEFARIA_EXPORT_PATH, SCHEMA_VERSION
+from JsonExporterForIOS import keep_directory, build_split_archive, SEFARIA_EXPORT_PATH, SCHEMA_VERSION,\
+    EXPORT_PATH, updated_books_list, new_books_since_last_update
 from flask import Flask, request, Response, jsonify
+from werkzeug.datastructures import FileStorage
+try:
+    from local_settings import DEBUG_MODE
+except ImportError:
+    DEBUG_MODE = False
 
 app = Flask(__name__)
 URL_BASE = 'static/ios-export'
@@ -76,6 +82,14 @@ def get_bundle_filename(book_list: list) -> str:
     return f'{books_hash}'
 
 
+def password_protect(user_password):
+    try:
+        password = os.environ['PASSWORD']
+    except KeyError:
+        return False
+    return user_password == password
+
+
 @app.route('/update')
 def update():
     try:
@@ -88,6 +102,20 @@ def update():
     action, index = request.args.get('action', default=''), request.args.get('index', default='')
     os.system(f'python JsonExporterForIOS.py {action} {index} &')
     return {'status': 'ok'}
+
+
+@app.route('/booksExport', methods=['GET', 'POST'])
+def books_export():
+    user_password = request.args.get('password')
+    if not password_protect(user_password) and not DEBUG_MODE:
+        return Response(status=403, response='Forbidden')
+
+    if request.method == 'GET':
+        return jsonify(updated_books_list() + new_books_since_last_update())
+    elif request.method == 'POST':
+        f = request.args.get('filename')
+        FileStorage(request.stream).save(os.path.join(EXPORT_PATH, f))
+        return Response(status=200, response='ok')
 
 
 @app.route('/healthz')
