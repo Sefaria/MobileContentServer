@@ -662,13 +662,18 @@ def write_last_updated(titles, update=False):
     Writes to `last_updated.json` the current time stamp for all `titles`.
     :param update: True if you only want to update the file and not overwrite
     """
+    def get_timestamp(title):
+        return datetime.fromtimestamp(os.stat(f'{EXPORT_PATH}/{title}.zip').st_mtime).isoformat()
 
-    timestamp = datetime.now().replace(second=0, microsecond=0).isoformat()
+    if not titles:
+        titles = filter(lambda x: x.endswith('zip'), os.listdir(EXPORT_PATH))
+        titles = [re.search(r'([^/]+)\.zip$', title).group(1) for title in titles]
+
     last_updated = {
         "schema_version": SCHEMA_VERSION,
-        "comment":"",
+        "comment": "",
         "titles": {
-            title: timestamp
+            title: get_timestamp(title)
             for title in titles
         }
     }
@@ -995,6 +1000,16 @@ def clear_bundles():
 
 
 if __name__ == '__main__':
+    purged = False
+
+    def purge():
+        global purged
+        if purged:
+            return
+        else:
+            purged = True
+            clear_bundles()
+            zip_packages()
     # we've been experiencing many issues with strange books appearing in the toc. i believe this line should solve that
     model.library.rebuild_toc()
     action = sys.argv[1] if len(sys.argv) > 1 else None
@@ -1012,6 +1027,7 @@ if __name__ == '__main__':
         export_updated()
     elif action == "purge_cloudflare":  # purge general toc and last_updated files
         if USE_CLOUDFLARE:
+            purge()
             purge_cloudflare_cache([])
         else:
             print("not using cloudflare")
@@ -1030,5 +1046,4 @@ if __name__ == '__main__':
         export_packages()
     elif action == "write_last_updated":  # for updating package infor
         write_last_updated([], True)
-    clear_bundles()
-    zip_packages()
+    purge()

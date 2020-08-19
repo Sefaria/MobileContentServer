@@ -18,3 +18,4 @@ CLOUDFLARE_ZONE = ""
 CLOUDFLARE_EMAIL = ""
 CLOUDFLARE_TOKEN = ""
 CLOUDFLARE_PATH = "http://readonly.sefaria.org/static/ios-export"
+DEBUG_MODE = False
