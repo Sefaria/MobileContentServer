@@ -22,6 +22,7 @@ from pprint import pprint
 from datetime import timedelta
 from datetime import datetime
 import dateutil.parser
+from concurrent.futures.thread import ThreadPoolExecutor
 from local_settings import *
 
 sys.path.insert(0, SEFARIA_PROJECT_PATH)
@@ -935,6 +936,13 @@ def recursive_listdir(path):
     return file_list
 
 
+def iter_chunks(list_obj: list, chunk_size: int):
+    current_loc = 0
+    while current_loc < len(list_obj):
+        yield list_obj[current_loc:current_loc + chunk_size]
+        current_loc = current_loc + chunk_size
+
+
 def purge_cloudflare_cache(titles):
     """
     Purges the URL for each zip file named in `titles` as well as toc.json, last_updated.json and calendar.json.
@@ -945,16 +953,22 @@ def purge_cloudflare_cache(titles):
     files += ["%s/%s/%s.json" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in ("toc", "search_toc", "last_updated", "calendar", "hebrew_categories", "people", "packages")]
     files += [f'{CLOUDFLARE_PATH}/{SCHEMA_VERSION}/{f}' for f in recursive_listdir('./static/ios-export/6/bundles')]
     url = 'https://api.cloudflare.com/client/v4/zones/%s/purge_cache' % CLOUDFLARE_ZONE
-    payload = {"files": files}
-    headers = {
-        "X-Auth-Email": CLOUDFLARE_EMAIL,
-        "X-Auth-Key": CLOUDFLARE_TOKEN,
-        "Content-Type": "application/json",
-    }
-    r = requests.delete(url, data=json.dumps(payload), headers=headers)
+
+    def send_purge(file_list):
+        payload = {"files": file_list}
+        headers = {
+            "X-Auth-Email": CLOUDFLARE_EMAIL,
+            "X-Auth-Key": CLOUDFLARE_TOKEN,
+            "Content-Type": "application/json",
+        }
+        return requests.delete(url, data=json.dumps(payload), headers=headers)
+
+    with ThreadPoolExecutor() as executor:
+        results = executor.map(send_purge, iter_chunks(files, 25))
+    # r = requests.delete(url, data=json.dumps(payload), headers=headers)
     print("Purged {} files from Cloudflare".format(len(files)))
 
-    return r
+    return results
 
 
 def export_all(skip_existing=False):
