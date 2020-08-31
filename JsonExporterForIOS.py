@@ -711,7 +711,7 @@ def split_list(l, size):
     return values
 
 
-def build_split_archive(book_list, build_loc, archive_size=MAX_FILE_SIZE):
+def build_split_archive(book_list, build_loc, export_dir='', archive_size=MAX_FILE_SIZE):
     if os.path.exists(build_loc):
         try:
             rmtree(build_loc)
@@ -727,7 +727,7 @@ def build_split_archive(book_list, build_loc, archive_size=MAX_FILE_SIZE):
             current_size = 0
             filenames.append(filename)
         try:
-            z.write(title)
+            z.write(os.path.join(export_dir, title), arcname=title)
         except FileNotFoundError:
             print(f"No zip file for {title}; the bundles will be missing this text")
             continue

@@ -1,8 +1,10 @@
 # encoding=utf-8
 
 import os
-import zipfile
+import threading
+import shutil
 import hashlib
+from datetime import datetime
 from local_settings import *
 from JsonExporterForIOS import keep_directory, build_split_archive, SEFARIA_EXPORT_PATH, SCHEMA_VERSION,\
     EXPORT_PATH, updated_books_list, new_books_since_last_update
@@ -27,9 +29,36 @@ def url_stubs(bundle_path, schema_version):
     return values
 
 
+def create_zip_bundle(book_list, zip_path, zip_dirname, file_locations):
+    # thread safety is critical in this method.
+    def is_recent_dir(dirname):  # this method should only return False if the directory in question exists and is "old"
+        try:
+            s = os.stat(dirname)
+        except FileNotFoundError:
+            return True
+
+        diff = datetime.now() - datetime.fromtimestamp(s.st_mtime)
+        return diff.total_seconds() < 120
+
+    try:
+        os.mkdir('./tmp')
+    except FileExistsError:
+        pass
+
+    tmp_dir = f'./tmp/{zip_dirname}'
+    if os.path.exists(tmp_dir):
+        if is_recent_dir(tmp_dir):
+            return
+
+    build_split_archive(book_list, tmp_dir, file_locations)
+    try:
+        shutil.move(tmp_dir, zip_path)
+    except FileNotFoundError:  # can theoretically happen if another thread is active
+        return
+
+
 @app.route('/makeBundle', methods=['POST'])
-@keep_directory
-def create_zip_bundle():
+def make_bundle():
     if not request.json or not request.json.get('books'):
         return Response(status=400, response='Invalid JSON')
 
@@ -39,28 +68,17 @@ def create_zip_bundle():
         schema_version = SCHEMA_VERSION
     export_path = f'{SEFARIA_EXPORT_PATH}/{schema_version}'
 
-    original_dir = os.getcwd()
-    os.chdir(export_path)
     book_list = [f'{b}.zip' for b in request.json['books']]
-    book_list = [b for b in book_list if os.path.exists(b)]
-    if not book_list:
-        os.chdir(original_dir)
-        return {'error': 'requested books not found'}
+    book_list = [b for b in book_list if os.path.exists(os.path.join(export_path, b))]
+    zip_dirname = get_bundle_filename(book_list)
+    zip_path = f'{export_path}/bundles/{zip_dirname}'
 
-    bundle_path = f'{export_path}/bundles'
-    if not os.path.isdir(bundle_path):
-        os.mkdir(bundle_path)
-
-    zip_filename = get_bundle_filename(book_list)
-    zip_path = f'{bundle_path}/{zip_filename}'
     if os.path.exists(zip_path):
-        filenames = os.listdir(zip_path)
+        return jsonify(url_stubs(zip_path, schema_version))
     else:
-        print(f'building new zip: {zip_filename}')
-        filenames = build_split_archive(book_list, zip_path)
-
-    os.chdir(original_dir)
-    return jsonify(url_stubs(zip_path, schema_version))
+        t = threading.Thread(target=create_zip_bundle, args=(book_list, zip_path, zip_dirname, export_path))
+        t.start()
+        return Response(status=202, response='Accepted')
 
 
 @app.route('/packageData', methods=['GET'])
