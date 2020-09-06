@@ -29,6 +29,13 @@ def url_stubs(bundle_path, schema_version):
     return values
 
 
+def get_directory_size(dir_path):
+    total = 0
+    for f in os.listdir(dir_path):  # this is naive but works for the case at hand
+        total += os.path.getsize(os.path.join(dir_path, f))
+    return total
+
+
 def create_zip_bundle(book_list, zip_path, zip_dirname, file_locations):
     # thread safety is critical in this method.
     def is_recent_dir(dirname):  # this method should only return False if the directory in question exists and is "old"
@@ -74,7 +81,10 @@ def make_bundle():
     zip_path = f'{export_path}/bundles/{zip_dirname}'
 
     if os.path.exists(zip_path):
-        return jsonify(url_stubs(zip_path, schema_version))
+        return {
+            'bundleArray': url_stubs(zip_path, schema_version),
+            'downloadSize': get_directory_size(zip_path),
+        }
     else:
         t = threading.Thread(target=create_zip_bundle, args=(book_list, zip_path, zip_dirname, export_path))
         t.start()

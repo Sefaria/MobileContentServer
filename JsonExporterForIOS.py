@@ -138,6 +138,7 @@ def export_texts(skip_existing=False):
     write_last_updated([i.title for i in indexes])
 
 
+@keep_directory
 def export_text(index, update=False):
     """Writes a ZIP file containing text content json and text index JSON
     :param index: can be either Index or str
