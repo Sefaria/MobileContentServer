@@ -300,6 +300,8 @@ def simple_link(link):
     }
     if link["category"] in ("Quoting Commentary", "Targum"):
         simple["category"] = link["category"]
+    if link.get("sourceHasEn", False):  # only include when True
+        simple["sourceHasEn"] = True
     return simple
 
 
