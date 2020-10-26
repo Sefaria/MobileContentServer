@@ -62,6 +62,7 @@ EXPORT_PATH = SEFARIA_EXPORT_PATH + "/" + SCHEMA_VERSION
 
 TOC_PATH          = "/toc.json"
 SEARCH_TOC_PATH   = "/search_toc.json"
+TOPIC_TOC_PATH    = "/topic_toc.json"
 HEB_CATS_PATH     = "/hebrew_categories.json"
 PEOPLE_PATH       = "/people.json"
 PACK_PATH         = "/packages.json"
@@ -191,6 +192,7 @@ def export_updated():
             updated_books.remove(index.title) # don't include books which dont export
 
     export_toc()
+    export_topic_toc()
     export_hebrew_categories()
     export_packages()
     export_calendar()
@@ -785,6 +787,11 @@ def export_hebrew_categories(for_sources=False):
     write_doc(hebrew_cats_json, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + HEB_CATS_PATH)
 
 
+def export_topic_toc(for_sources=False):
+    topic_toc = model.library.get_topic_toc_json_recursive(with_descriptions=True)
+    write_doc(topic_toc, (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + TOPIC_TOC_PATH)
+
+
 def clean_toc_nodes(toc):
     """
     Removes any nodes in TOC that we can't handle.
@@ -953,7 +960,7 @@ def purge_cloudflare_cache(titles):
     if not titles:
         titles = [t.title for t in model.library.all_index_records()]
     files = ["%s/%s/%s.zip" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in titles]
-    files += ["%s/%s/%s.json" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in ("toc", "search_toc", "last_updated", "calendar", "hebrew_categories", "people", "packages")]
+    files += ["%s/%s/%s.json" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in ("toc", "topic_toc", "search_toc", "last_updated", "calendar", "hebrew_categories", "people", "packages")]
     files += [f'{CLOUDFLARE_PATH}/{SCHEMA_VERSION}/{f}' for f in recursive_listdir('./static/ios-export/6/bundles')]
     url = 'https://api.cloudflare.com/client/v4/zones/%s/purge_cache' % CLOUDFLARE_ZONE
 
@@ -981,6 +988,7 @@ def export_all(skip_existing=False):
     """
     start_time = time.time()
     export_toc()
+    export_topic_toc()
     export_calendar()
     export_hebrew_categories()
     export_texts(skip_existing)
@@ -995,6 +1003,7 @@ def export_base_files_to_sources():
     Run this before every new release
     """
     export_toc(for_sources=True)
+    export_topic_toc(for_sources=True)
     export_hebrew_categories(for_sources=True)
     export_calendar(for_sources=True)
     export_authors(for_sources=True)
@@ -1050,7 +1059,9 @@ if __name__ == '__main__':
             print("not using cloudflare")
     elif action == "export_toc":
         export_toc()
-        purge_cloudflare_cache([])
+        export_topic_toc()
+        if USE_CLOUDFLARE:
+            purge_cloudflare_cache([])
     elif action == "export_hebrew_categories":
         export_hebrew_categories()
     elif action == "export_calendar":
