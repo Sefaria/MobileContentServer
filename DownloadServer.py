@@ -127,7 +127,7 @@ def update():
     user_password = request.args.get('password')
     if user_password != password:
         return Response(status=403, response='Forbidden')
-    action, index = request.args.get('action', default=''), request.args.get('index', default='')
+    action, index = request.args.get('action', default='export_all_skip_existing'), request.args.get('index', default='')
     os.system(f'python JsonExporterForIOS.py {action} {index} &')
     return {'status': 'ok'}
 
