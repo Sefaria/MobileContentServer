@@ -1075,3 +1075,15 @@ if __name__ == '__main__':
     elif action == "write_last_updated":  # for updating package infor
         write_last_updated([], True)
     purge()
+    try:
+        url = os.environ['SLACK_URL']
+    except KeyError:
+        print('slack url not configured')
+        sys.exit(0)
+    timestamp = datetime.fromtimestamp(os.stat(f'{EXPORT_PATH}/last_updated.json').st_mtime).ctime()
+    requests.post(url, json={
+        'channel': '#engineering-mobile',
+        'text': f'Mobile export complete. Timestamp on `last_updated.json` is {timestamp}',
+        'username': 'Mobile Export',
+        'icon_emoji': ':file_folder:'
+    })
