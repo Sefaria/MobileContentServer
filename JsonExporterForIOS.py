@@ -69,6 +69,7 @@ PACK_PATH         = "/packages.json"
 CALENDAR_PATH     = "/calendar.json"
 LAST_UPDATED_PATH = EXPORT_PATH + "/last_updated.json"
 MAX_FILE_SIZE = 100e6
+BUNDLE_PATH = f'{EXPORT_PATH}/bundles'
 
 
 def keep_directory(func):
@@ -747,9 +748,42 @@ def build_split_archive(book_list, build_loc, export_dir='', archive_size=MAX_FI
 
 
 @keep_directory
+def clear_old_bundles(old_age=3, max_files=50):
+    """
+    This method will check the bundles directory and clean out old bundles (this would be updates that aren't being used)
+    :param old_age: bundles not served in this number of days will be deleted
+    :param max_files: if less than this many files exist, nothing will happen
+    :return:
+    """
+    os.chdir(BUNDLE_PATH)
+    # get packages
+    with open('../packages.json') as fp:
+        packages = json.load(fp)
+    packages = set(p['en'] for p in packages)
+    # list all non package bundles
+    bundles = [s for s in os.listdir('.') if s not in packages]
+    if len(bundles) < max_files:
+        return
+    # for each package if old, delete
+    for bundle in bundles:
+        try:
+            stat = os.stat(f'{bundle}/1.zip')
+        except FileNotFoundError:
+            continue
+        now = datetime.now()
+        age = datetime.fromtimestamp(stat.st_atime)
+        delta = now - age
+        if delta.days >= old_age:
+            try:
+                rmtree(bundle)
+            except FileNotFoundError:
+                pass
+
+
+@keep_directory
 def zip_packages():
     packages = get_downloadable_packages()
-    bundle_path = f'{EXPORT_PATH}/bundles'
+    bundle_path = BUNDLE_PATH
     if not os.path.isdir(bundle_path):
         os.mkdir(bundle_path)
 
@@ -1014,7 +1048,7 @@ def export_base_files_to_sources():
 def clear_bundles():
     curdir = os.getcwd()
     try:
-        os.chdir(f'{EXPORT_PATH}/bundles')
+        os.chdir(BUNDLE_PATH)
     except FileNotFoundError:
         return
     for f in os.listdir('.'):

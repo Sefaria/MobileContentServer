@@ -7,7 +7,7 @@ import hashlib
 from datetime import datetime
 from local_settings import *
 from JsonExporterForIOS import keep_directory, build_split_archive, SEFARIA_EXPORT_PATH, SCHEMA_VERSION,\
-    EXPORT_PATH, updated_books_list, new_books_since_last_update
+    EXPORT_PATH, updated_books_list, new_books_since_last_update, clear_old_bundles
 from flask import Flask, request, Response, jsonify
 from werkzeug.datastructures import FileStorage
 try:
@@ -86,6 +86,7 @@ def make_bundle():
             'downloadSize': get_directory_size(zip_path),
         }
     else:
+        clear_old_bundles()
         t = threading.Thread(target=create_zip_bundle, args=(book_list, zip_path, zip_dirname, export_path))
         t.start()
         return Response(status=202, response='Accepted')
