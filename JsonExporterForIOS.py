@@ -824,7 +824,7 @@ def export_hebrew_categories(for_sources=False):
 def export_topic_toc(for_sources=False):
     topic_toc = model.library.get_topic_toc_json_recursive(with_descriptions=True)
     write_doc(topic_toc, (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + TOPIC_TOC_PATH)
-
+    write_doc(topic_toc, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + TOPIC_TOC_PATH)
 
 def clean_toc_nodes(toc):
     """
