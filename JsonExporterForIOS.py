@@ -767,17 +767,9 @@ def clear_old_bundles(old_age=3, max_files=50):
     # for each package if old, delete
     for bundle in bundles:
         try:
-            stat = os.stat(f'{bundle}/1.zip')
+            rmtree(bundle)
         except FileNotFoundError:
-            continue
-        now = datetime.now()
-        age = datetime.fromtimestamp(stat.st_atime)
-        delta = now - age
-        if delta.days >= old_age:
-            try:
-                rmtree(bundle)
-            except FileNotFoundError:
-                pass
+            pass
 
 
 @keep_directory
