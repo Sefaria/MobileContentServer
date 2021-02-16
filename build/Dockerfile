@@ -9,7 +9,6 @@ ENV DJANGO_SETTINGS_MODULE sefaria.settings
 
 # Clone Sefaria-Project
 RUN git clone https://github.com/Sefaria/Sefaria-Project --branch ${sefariaProjectBranch} --single-branch
-RUN pwd
 
 # requirements.txt from Sefaria-Project
 # COPY ./Sefaria-Project/requirements.txt /Sefaria-Project/requirements.txt
@@ -17,16 +16,12 @@ RUN pip3 install --no-cache-dir -r /Sefaria-Project/requirements.txt --use-featu
 
 # requirements.txt from MobileContentServer
 COPY ./requirements.txt /MobileContentServer/requirements.txt
-RUN pip3 install --no-cache-dir -r /MobileContentServer/requirements.txt
+RUN pip3 install --no-cache-dir -r /MobileContentServer/requirements.txt --use-feature=2020-resolver
 
-COPY . /Sefaria-Project
 RUN mkdir -p /Sefaria-Project/log
-COPY ./build/sefaria_local_settings.py /Sefaria-Project/sefaria/local_settings.py
-
 
 COPY ./ /MobileContentServer
 WORKDIR /MobileContentServer
-COPY ./build/local_settings.py /MobileContentServer/local_settings.py
 
 ENV FLASK_APP /MobileContentServer/DownloadServer.py
 EXPOSE 80
