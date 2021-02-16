@@ -36,7 +36,7 @@ substStr=${substStr:1} # Omit the leading comma
 echo $substStr
 
 
-gcloud builds submit ../../ \
+gcloud builds submit ../ \
   --config ./cloudbuild.yaml \
   --substitutions $substStr \
   --verbosity debug \
