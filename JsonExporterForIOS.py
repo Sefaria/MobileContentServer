@@ -101,6 +101,32 @@ def write_doc(doc, path):
         json.dump(doc, f, ensure_ascii=False, indent=(None if MINIFY_JSON else 4), separators=((',',':') if MINIFY_JSON else None))
 
 
+@keep_directory
+def os_error_cleanup():
+    os.chdir(EXPORT_PATH)
+    json_files = glob.glob('*.json')
+
+    for jf in json_files:
+        if not re.search(r'(calendar|toc|last_updated|hebrew_categories).json', jf):
+            os.remove(jf)
+    message = 'OSError during export'
+    print(message)
+    if not DEBUG_MODE:
+        try:
+            slack_url = os.environ['SLACK_URL']
+        except KeyError:
+            slack_url = None
+        if slack_url:
+            requests.post(slack_url, json={
+                'channel': '#engineering-mobile',
+                'text': message,
+                'username': 'Mobile Export',
+                'icon_emoji': ':redlight:'
+            })
+    clear_old_bundles(max_files=0)
+
+
+@keep_directory
 def zip_last_text(title):
     """
     Zip up the JSON files of the last text exported into and delete the original JSON files.
@@ -287,6 +313,9 @@ def export_text_json(index):
             write_doc(doc, path)
         return True
 
+    except OSError:
+        os_error_cleanup()
+        raise OSError
     except Exception as e:
         print("Error exporting %s: %s" % (index.title, e))
         print(traceback.format_exc())
@@ -564,6 +593,9 @@ def export_index(index):
         write_doc(index_counts, path)
 
         return True
+    except OSError:
+        os_error_cleanup()
+        raise OSError
     except Exception as e:
         print("Error exporting Index for %s: %s" % (index.title, e))
         print(traceback.format_exc())
@@ -748,7 +780,7 @@ def build_split_archive(book_list, build_loc, export_dir='', archive_size=MAX_FI
 
 
 @keep_directory
-def clear_old_bundles(old_age=3, max_files=50):
+def clear_old_bundles(max_files=50):
     """
     This method will check the bundles directory and clean out old bundles (this would be updates that aren't being used)
     :param old_age: bundles not served in this number of days will be deleted
