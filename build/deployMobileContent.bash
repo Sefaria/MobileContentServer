@@ -6,6 +6,7 @@ gcpProject=${GCP_PROJECT:?GCP_PROJECT must be set}
 gkeCluster=${GKE_CLUSTER:?GKE_CLUSTER must be set}
 gkeNamespace=${GKE_NAMESPACE:? GKE_NAMESPACE must be set}
 subdomain=${SUBDOMAIN:?SUBDOMAIN must be set}
+k8sAdminBranch=${K8S_ADMIN_BRANCH:-master}
 
 randStub=$(date | md5sum | head -c 12)
 
@@ -18,6 +19,7 @@ substVars+=("_GKE_CLUSTER=$gkeCluster")
 substVars+=("_GKE_NAMESPACE=$gkeNamespace")
 substVars+=("_SUBDOMAIN=$subdomain")
 substVars+=("_SHARED_TOKEN=$randStub")
+substVars+=("_K8S_ADMIN_BRANCH=$k8sAdminBranch")
 
 #-------------------
 # Concatenate the variable strings
