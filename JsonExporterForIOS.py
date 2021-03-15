@@ -930,6 +930,10 @@ def export_calendar(for_sources=False):
                 # aggregate by type to combine refs
                 cal_items_dict = {}
                 for c in cal_items:
+                    oref = model.Ref(c['ref'])
+                    if oref.index.categories[0] == 'Talmud' and oref.range_size() == 2:
+                        # normalize daf refs (e.g. Berakhot 2 => Berakhot 2a-b)
+                        c['ref'] += 'a-b'
                     ckey = c['order']
                     if ckey in cal_items_dict:
                         cal_items_dict[ckey]['refs'] += [c['ref']]
