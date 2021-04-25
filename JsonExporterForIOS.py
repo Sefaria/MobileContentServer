@@ -111,20 +111,23 @@ def os_error_cleanup():
             os.remove(jf)
     message = 'OSError during export'
     print(message)
-    if not DEBUG_MODE:
-        try:
-            slack_url = os.environ['SLACK_URL']
-        except KeyError:
-            slack_url = None
-        if slack_url:
-            requests.post(slack_url, json={
-                'channel': '#engineering-mobile',
-                'text': message,
-                'username': 'Mobile Export',
-                'icon_emoji': ':redlight:'
-            })
+    alert_slack(message, ':redlight:')
     clear_old_bundles(max_files=0)
 
+def alert_slack(message, icon_emoji):
+    if DEBUG_MODE:
+        print(message)
+        return 
+    try:
+        slack_url = os.environ['SLACK_URL']
+    except KeyError:
+        return
+    requests.post(slack_url, json={
+        'channel': '#engineering-mobile',
+        'text': message,
+        'username': 'Mobile Export',
+        'icon_emoji': icon_emoji
+    })
 
 @keep_directory
 def zip_last_text(title):
@@ -605,11 +608,16 @@ def export_index(index):
 
 def get_indexes_in_category(cats, toc):
     indexes = []
+    category_found = False
     for temp_toc in toc:
         if "contents" in temp_toc and (len(cats) == 0 or temp_toc["category"] == cats[0]):
             indexes += get_indexes_in_category(cats[1:], temp_toc["contents"])
+            category_found = True
         elif len(cats) == 0 and "title" in temp_toc:
             indexes += [temp_toc["title"]]
+            category_found = True
+    if not category_found:
+        raise InputError
     return indexes
 
 
@@ -631,7 +639,7 @@ def get_downloadable_packages():
                 "Tanakh/Torah",
                 "Tanakh/Prophets",
                 "Tanakh/Writings",
-                "Tanakh/Commentary/Rashi"
+                "Tanakh/Rishonim on Tanakh/Rashi"
             ]
         },
         {
@@ -654,8 +662,8 @@ def get_downloadable_packages():
                 "Talmud/Bavli/Seder Nezikin",
                 "Talmud/Bavli/Seder Kodashim",
                 "Talmud/Bavli/Seder Tahorot",
-                "Talmud/Bavli/Commentary/Rashi",
-                "Talmud/Bavli/Commentary/Tosafot"
+                "Talmud/Bavli/Rishonim on Talmud/Rashi",
+                "Talmud/Bavli/Rishonim on Talmud/Tosafot"
             ]
         },
         {
@@ -682,7 +690,10 @@ def get_downloadable_packages():
         hasCats = len(p["categories"]) > 0
         if hasCats:
             for c in p["categories"]:
-                indexes += get_indexes_in_category(c.split("/"), toc)
+                try:
+                    indexes += get_indexes_in_category(c.split("/"), toc)
+                except InputError:
+                    alert_slack(f"Error in `get_downloadable_packages()`. Category doesn't exist: {c}", ':redlight:')
         else:
             indexes += get_indexes_in_category([], toc)
         size = 0
@@ -1143,12 +1154,4 @@ if __name__ == '__main__':
         print('slack url not configured')
         sys.exit(0)
     timestamp = datetime.fromtimestamp(os.stat(f'{EXPORT_PATH}/last_updated.json').st_mtime).ctime()
-    if DEBUG_MODE:
-        print(f'Mobile export complete. Timestamp on `last_updated.json` is {timestamp}')
-    else:
-        requests.post(url, json={
-            'channel': '#engineering-mobile',
-            'text': f'Mobile export complete. Timestamp on `last_updated.json` is {timestamp}',
-            'username': 'Mobile Export',
-            'icon_emoji': ':file_folder:'
-        })
+    alert_slack(f'Mobile export complete. Timestamp on `last_updated.json` is {timestamp}', ':file_folder')
