@@ -983,13 +983,11 @@ def export_calendar(for_sources=False):
 
 
 def export_authors(for_sources=False):
-    ps = model.PersonSet()
+    ps = model.AuthorTopicSet()
     people = {}
     for person in ps:
-        for name in person.names:
-            if not isinstance(name["text"], str):
-                continue
-            people[name["text"].lower()] = 1
+        for title in person.titles:
+            people[title["text"].lower()] = 1
     path = (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + PEOPLE_PATH
     write_doc(people, path)
     write_doc(people, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + PEOPLE_PATH)
