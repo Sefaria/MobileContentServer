@@ -611,8 +611,9 @@ def get_indexes_in_category(cats, toc):
     category_found = False
     for temp_toc in toc:
         if "contents" in temp_toc and (len(cats) == 0 or temp_toc["category"] == cats[0]):
-            indexes += get_indexes_in_category(cats[1:], temp_toc["contents"])
             category_found = True
+            if len(temp_toc["contents"]) == 0: continue
+            indexes += get_indexes_in_category(cats[1:], temp_toc["contents"])
         elif len(cats) == 0 and "title" in temp_toc:
             indexes += [temp_toc["title"]]
             category_found = True
@@ -695,7 +696,10 @@ def get_downloadable_packages():
                 except InputError:
                     alert_slack(f"Error in `get_downloadable_packages()`. Category doesn't exist: {c}", ':redlight:')
         else:
-            indexes += get_indexes_in_category([], toc)
+            try:
+                indexes += get_indexes_in_category([], toc)
+            except InputError:
+                alert_slack(f"Error in `get_downloadable_packages()`. Full library", ':redlight:')
         size = 0
         for i in indexes:
             size += os.path.getsize("{}/{}.zip".format(EXPORT_PATH, i)) if os.path.isfile("{}/{}.zip".format(EXPORT_PATH, i)) else 0  # get size in kb. overestimate by 1kb
