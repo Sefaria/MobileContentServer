@@ -893,7 +893,7 @@ def export_toc(for_sources=False):
     Writes the Table of Contents JSON to a single file.
     """
     print("Export Table of Contents")
-    new_toc = model.library.get_toc()
+    new_toc = model.library.get_toc_tree(mobile=True, rebuild=True).get_serialized_toc()
     new_search_toc = model.library.get_search_filter_toc()
     new_new_toc = clean_toc_nodes(new_toc)
     new_new_search_toc = clean_toc_nodes(new_search_toc)
