@@ -929,6 +929,15 @@ def new_books_since_last_update():
     return added_books
 
 
+def unnormalize_talmud_ranges(tref):
+    oref = model.Ref(tref)
+    iaddr = len(oref.sections)-1
+    if oref.index_node.addressTypes[iaddr] == 'Talmud' and oref.range_size() > 1:
+        section_refs = oref.split_spanning_ref()
+        return f"{section_refs[0].normal()}-{model.schema.AddressTalmud.toStr('en', section_refs[-1].sections[iaddr])}"
+    return tref
+
+
 def export_calendar(for_sources=False):
     """
     Writes a JSON file with all calendars from `get_all_calendar_items` for the next 365 days
@@ -945,10 +954,7 @@ def export_calendar(for_sources=False):
                 # aggregate by type to combine refs
                 cal_items_dict = {}
                 for c in cal_items:
-                    oref = model.Ref(c['ref'])
-                    if oref.index.categories[0] == 'Talmud' and oref.range_size() == 2:
-                        # normalize daf refs (e.g. Berakhot 2 => Berakhot 2a-b)
-                        c['ref'] += 'a-b'
+                    c['ref'] = unnormalize_talmud_ranges(c['ref'])
                     ckey = c['order']
                     if ckey in cal_items_dict:
                         cal_items_dict[ckey]['refs'] += [c['ref']]
