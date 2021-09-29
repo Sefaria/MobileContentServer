@@ -33,7 +33,7 @@ django.setup()
 
 import sefaria.model as model
 from sefaria.client.wrapper import get_links
-from sefaria.model.text import Version
+from sefaria.model.text import TextChunk, Version
 from sefaria.model.schema import Term
 from sefaria.utils.talmud import section_to_daf
 from sefaria.utils.calendars import get_all_calendar_items
@@ -475,6 +475,12 @@ class TextAndLinksForIndex:
             else:  # Ref(Pesach Haggadah, Kadesh) does not have sections, although it is a section ref
                 return self._text_map[node_title][ja_lang].array()
 
+        def strip_itags_recursive(text_array):
+            if isinstance(text_array, str):
+                return TextChunk._strip_itags(text_array)
+            else:
+                return [strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
+
         node_title = oref.index_node.full_title()
         en_chunk, he_chunk = self._text_map[node_title]['en_chunk'], self._text_map[node_title]['en_chunk']
         en_vtitle, en_vnotes, en_vlicense, en_vsource, en_vtitle_he, en_vnotes_he = get_version_title(en_chunk)
@@ -505,8 +511,8 @@ class TextAndLinksForIndex:
         if he_vnotes_he:
             data['heVersionNotesInHebrew'] = he_vnotes_he
 
-        en_text = get_text_array(oref.sections, 'en_ja')
-        he_text = get_text_array(oref.sections, 'he_ja')
+        en_text = strip_itags_recursive(get_text_array(oref.sections, 'en_ja'))
+        he_text = strip_itags_recursive(get_text_array(oref.sections, 'he_ja'))
 
         en_len = len(en_text)
         he_len = len(he_text)
