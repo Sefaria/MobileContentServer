@@ -302,6 +302,7 @@ def export_text_json(index):
         index_text = TextAndLinksForIndex(index)
         for oref in index.all_top_section_refs():
             if oref.is_section_level():
+                # depth 2 (or 1?)
                 doc = index_text.section_data(oref, defaultVersions)
             else:
                 sections = oref.all_subrefs()
@@ -310,7 +311,14 @@ def export_text_json(index):
                     "sections": {}
                 }
                 for section in sections:
-                    doc["sections"][section.normal()] = index_text.section_data(section, defaultVersions)
+                    if section.is_section_level():
+                        # depth 3
+                        doc["sections"][section.normal()] = index_text.section_data(section, defaultVersions)
+                    else:
+                        # depth 4
+                        real_sections = section.all_subrefs()
+                        for real_section in real_sections:
+                            doc["sections"][real_section.normal()] = index_text.section_data(real_section, defaultVersions)
 
             path = make_path(doc, "json")
             write_doc(doc, path)
