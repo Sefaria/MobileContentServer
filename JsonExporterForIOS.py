@@ -614,7 +614,7 @@ def export_index(index):
         os_error_cleanup()
         raise OSError
     except Exception as e:
-        print("Error exporting Index for %s: %s" % (index.title, e))
+        print("Error exporting index for %s: %s" % (index.title, e))
         print(traceback.format_exc())
 
         return False
