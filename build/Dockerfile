@@ -8,7 +8,7 @@ ENV PYTHONPATH /Sefaria-Project
 ENV DJANGO_SETTINGS_MODULE sefaria.settings
 
 # Clone Sefaria-Project
-RUN git clone https://github.com/Sefaria/Sefaria-Project --single-branch
+RUN git clone https://github.com/Sefaria/Sefaria-Project --branch ${sefariaProjectBranch} --single-branch --quiet
 
 # requirements.txt from Sefaria-Project
 # COPY ./Sefaria-Project/requirements.txt /Sefaria-Project/requirements.txt
