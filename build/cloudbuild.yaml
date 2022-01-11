@@ -18,7 +18,6 @@ steps:
   - name: gcr.io/kaniko-project/executor:v1.6.0
     args: 
       - --context=dir://.
-      - --cache=true
       - --dockerfile=build/Dockerfile
       - --destination=gcr.io/${PROJECT_ID}/mobile-content-${_ENV_NAME}:latest
       - --destination=gcr.io/${PROJECT_ID}/mobile-content-${_ENV_NAME}:${BUILD_ID}
