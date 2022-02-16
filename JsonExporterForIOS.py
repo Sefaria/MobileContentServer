@@ -968,24 +968,29 @@ def export_calendar(for_sources=False):
                 # aggregate by type to combine refs
                 cal_items_dict = {}
                 for c in cal_items:
-                    c['ref'] = unnormalize_talmud_ranges(c['ref'])
+                    has_ref = bool(c.get('ref', False))  # some calendar items only have URLs (e.g. Chok Leyisrael)
                     ckey = c['order']
+                    if has_ref:
+                        c['ref'] = unnormalize_talmud_ranges(c['ref'])
                     if ckey in cal_items_dict:
-                        cal_items_dict[ckey]['refs'] += [c['ref']]
+                        # not currently supporting multiple URLs for one calendar item
+                        if has_ref:
+                            cal_items_dict[ckey]['refs'] += [c['ref']]
                         cal_items_dict[ckey]['subs'] += [c['displayValue']]
                     else:
-                        ref = c['ref']
+                        if has_ref:
+                            c['refs'] = [c['ref']]
+                            del c['url']
+                            del c['ref']
                         displayValue = c['displayValue']
-                        del c['ref']
-                        del c['url']
                         del c['displayValue']
-                        c['refs'] = [ref]
                         c['subs'] = [displayValue]
                         cal_items_dict[ckey] = c
                 for ckey, c in list(cal_items_dict.items()):
                     c['custom'] = custom
                     c['diaspora'] = diaspora
-                    all_possibilities[ckey][c['refs'][0]] += [c]
+                    cid = c.get('refs', [])[0] if has_ref else c.get('url', '')
+                    all_possibilities[ckey][cid] += [c]
         for key, title_dict in list(all_possibilities.items()):
             for i, (tref, poss_list) in enumerate(title_dict.items()):
                 if i == 0:
@@ -1169,7 +1174,7 @@ if __name__ == '__main__':
         export_packages()
     elif action == "write_last_updated":  # for updating package infor
         write_last_updated([], True)
-    purge()
+    #purge()
     try:
         url = os.environ['SLACK_URL']
     except KeyError:
