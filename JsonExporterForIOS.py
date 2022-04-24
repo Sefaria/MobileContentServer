@@ -1176,7 +1176,7 @@ if __name__ == '__main__':
         export_packages()
     elif action == "write_last_updated":  # for updating package infor
         write_last_updated([], True)
-    #purge()
+    purge()
     try:
         url = os.environ['SLACK_URL']
     except KeyError:
