@@ -969,6 +969,7 @@ def export_calendar(for_sources=False):
                 cal_items_dict = {}
                 for c in cal_items:
                     has_ref = bool(c.get('ref', False))  # some calendar items only have URLs (e.g. Chok Leyisrael)
+                    c['hasRef'] = has_ref
                     ckey = c['order']
                     if has_ref:
                         c['ref'] = unnormalize_talmud_ranges(c['ref'])
@@ -989,7 +990,8 @@ def export_calendar(for_sources=False):
                 for ckey, c in list(cal_items_dict.items()):
                     c['custom'] = custom
                     c['diaspora'] = diaspora
-                    cid = c.get('refs', [])[0] if has_ref else c.get('url', '')
+                    cid = c.get('refs', [])[0] if c['hasRef'] else c.get('url', '')
+                    del c['hasRef']
                     all_possibilities[ckey][cid] += [c]
         for key, title_dict in list(all_possibilities.items()):
             for i, (tref, poss_list) in enumerate(title_dict.items()):
