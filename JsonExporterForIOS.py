@@ -485,7 +485,7 @@ class TextAndLinksForIndex:
 
         def strip_itags_recursive(text_array):
             if isinstance(text_array, str):
-                return TextChunk._strip_itags(text_array)
+                return TextChunk.strip_itags(text_array)
             else:
                 return [strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
 
