@@ -16,6 +16,7 @@ import requests
 import p929
 import codecs
 from collections import defaultdict
+from functools import reduce
 from shutil import rmtree
 from random import random
 from pprint import pprint
@@ -70,6 +71,69 @@ CALENDAR_PATH     = "/calendar.json"
 LAST_UPDATED_PATH = EXPORT_PATH + "/last_updated.json"
 MAX_FILE_SIZE = 100e6
 BUNDLE_PATH = f'{EXPORT_PATH}/bundles'
+
+# TODO these descriptions should be moved to the DB
+# For now, this data also exists in Sefaria-Project/CalendarsPage.jsx
+# Engineers need to be careful to keep these two copies in sync if one of them is edited.
+calendarDescriptions = {
+    "Parashat Hashavua": {},
+    "Haftarah": {
+        "en": "The portion from Prophets (a section of the Bible) read on any given week, based on its thematic connection to the weekly Torah portion.",
+        "he": "קטע קבוע לכל פרשה מספרי הנביאים הנקרא בכל שבת ומועד, ויש לו קשר רעיוני לפרשת השבוע."
+    },
+    "Daf Yomi": {
+        "en": "A learning program that covers a page of Talmud a day. In this way, the entire Talmud is completed in about seven and a half years.",
+        "he": "סדר לימוד לתלמוד הבבלי הכולל לימוד של דף אחד בכל יום. הלומדים בדרך זו מסיימים את קריאת התלמוד כולו בתוך כשבע שנים וחצי.",
+        "enSubtitle": "Talmud",
+    },
+    "929": {
+        "en": "A learning program in which participants study five of the Bible’s 929 chapters a week, completing it in about three and a half years.",
+        "he": "סדר שבועי ללימוד תנ\"ך שבו נלמדים בכל שבוע חמישה מתוך 929 פרקי התנ\"ך. הלומדים בדרך זו מסיימים את קריאת התנ\"ך כולו כעבור שלוש שנים וחצי.",
+        "enSubtitle": "Tanakh",
+    },
+    "Daily Mishnah": {
+        "en": "A program of daily learning in which participants study two Mishnahs (teachings) each day in order to finish the entire Mishnah in six years.",
+        "he": "סדר לימוד משנה שבמסגרתו נלמדות שתי משניות בכל יום. הלומדים בדרך זו מסיימים את קריאת המשנה כולה כעבור שש שנים."
+    },
+    "Daily Rambam": {
+        "en": "A learning program that divides Maimonides’ Mishneh Torah legal code into daily units, to complete the whole work in three years.",
+        "he": "סדר לימוד הספר ההלכתי של הרמב\"ם, \"משנה תורה\", המחלק את הספר ליחידות יומיות. הלומדים בדרך זו מסיימים את קריאת הספר כולו בתוך שלוש שנים."
+    },
+    "Daily Rambam (3 Chapters)": {
+        "en": "A learning program that divides Maimonides’ Mishneh Torah legal code into daily units, to complete the whole work in one year.",
+        "he": "סדר לימוד הספר ההלכתי של הרמב\"ם, \"משנה תורה\", המחלק את הספר ליחידות יומיות. הלומדים בדרך זו מסיימים את קריאת הספר כולו בתוך שנה אחת.",
+    },
+    "Daf a Week": {
+        "en": "A learning program that covers a page of Talmud a week. By going at a slower pace, it facilitates greater mastery and retention.",
+        "he": "סדר שבועי ללימוד התלמוד הבבלי שבו נלמד דף תלמוד אחד בכל שבוע. קצב הלימוד האיטי מאפשר ללומדים הפנמה ושליטה רבה יותר בחומר הנלמד.",
+        "enSubtitle": "Talmud",
+    },
+    "Halakhah Yomit": {
+        "en": "A four year daily learning program in which participants study central legal texts that cover most of the daily and yearly rituals.",
+        "he": "תוכנית ארבע־שנתית ללימוד מקורות הלכתיים מרכזיים העוסקים ברוב הלכות היום־יום והמועדים.",
+    },
+    "Arukh HaShulchan Yomi": {
+        "en": "A four-year daily learning program covering ritual halakhot, practical kashrut and interpersonal mitzvot within Rabbi Yechiel Michel Epstein’s legal code, Arukh HaShulchan.",
+        "he": "תכנית לימוד ארבע-שנתית של הלכות מעשיות מתוך ספר ערוך השלחן, חיבורו ההלכתי של הרב יחיאל מיכל עפשטיין.",
+    },
+    "Tanya Yomi": {
+        "en": "A daily learning cycle for completing Tanya annually, starting at the 19th of Kislev, “Rosh Hashanah of Chasidut.”",
+        "he": "סדר לימוד המשלים את ספר התניא אחת לשנה, החל מיום י\"ט בכסליו \"ראש השנה לחסידות\"."
+    },
+    "Tanakh Yomi": {
+        "en": "A daily learning cycle for completing Tanakh annually. On Shabbat, each Torah portion is recited. On weekdays, Prophets and Writings are recited according to the ancient Masoretic division of sedarim.",
+        "he": "סדר לימוד המשלים את קריאת התנ\"ך כולו אחת לשנה. בשבתות קוראים את התורה לפי סדר פרשיות השבוע. בימות החול קוראים את הנ\"ך על פי חלוקת הסדרים של המסורה.",
+        "enSubtitle": "Tanakh",
+    },
+    "Zohar for Elul": {
+        "en": "A 40 day learning schedule in which participants learn the Kabbalistic work \"Tikkunei Zohar\" over the course of the days between the First of the month of Elul and Yom Kippur.",
+        "he": "סדר יומי ללימוד הספר \"תיקוני הזהר\". הסדר נמשך 40 יום, בתקופה שבין ראש חודש אלול ויום הכיפורים.",
+    },
+    "Chok LeYisrael": {
+        "en": "A book designed for daily study. Each day’s learning consists of biblical verses together with commentary, a chapter of Mishnah, and short passages of Talmud, Zohar, and of works of Halakhah and Musar.",
+        "he": 'לימוד יומי הכולל פסוקי תנ״ך ופירושם, פרק משנה, קטע מהתלמוד, קטע מהזוהר, קטע מספר הלכה וקטע מספר מוסר.',
+    }
+}
 
 
 def keep_directory(func):
@@ -952,11 +1016,23 @@ def unnormalize_talmud_ranges(tref):
     return tref
 
 
+def _get_calendar_metadata():
+    metadata = {}
+    for calendar_name, temp_metadata in calendarDescriptions.items():
+        description = reduce(lambda a, lang: {**a, lang: temp_metadata[lang]} if lang in temp_metadata else a, ("en", "he"), {})
+        subtitle = reduce(lambda a, lang: {**a, lang: temp_metadata.get(f"{lang}Subtitle", None)} if f"{lang}Subtitle" in temp_metadata else a, ("en", "he"), {})
+        metadata[calendar_name] = {
+            "description": description,
+            "subtitle": subtitle,
+        }
+    return metadata
+
+
 def export_calendar(for_sources=False):
     """
     Writes a JSON file with all calendars from `get_all_calendar_items` for the next 365 days
     """
-    calendar = {}
+    calendar = {'metadata': _get_calendar_metadata(), 'dates': {}}
     base = datetime.today()
     date_list = [base + timedelta(days=x) for x in range(-2, 365)]
     for dt in date_list:
@@ -1005,8 +1081,7 @@ def export_calendar(for_sources=False):
                         del p['custom']
                         del p['diaspora']
                         curr_cal[pkey] += [p]
-        calendar[dt.date().isoformat()] = curr_cal
-
+        calendar['dates'][dt.date().isoformat()] = curr_cal
 
     path = (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + CALENDAR_PATH
     write_doc(calendar, path)
@@ -1128,7 +1203,7 @@ def clear_bundles():
 
 
 if __name__ == '__main__':
-    purged = False
+    purged = True
 
     def purge():
         global purged
@@ -1184,3 +1259,5 @@ if __name__ == '__main__':
         sys.exit(0)
     timestamp = datetime.fromtimestamp(os.stat(f'{EXPORT_PATH}/last_updated.json').st_mtime).ctime()
     alert_slack(f'Mobile export complete. Timestamp on `last_updated.json` is {timestamp}', ':file_folder')
+
+
