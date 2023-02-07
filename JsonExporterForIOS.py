@@ -1033,7 +1033,7 @@ def export_calendar(for_sources=False):
     """
     Writes a JSON file with all calendars from `get_all_calendar_items` for the next 365 days
     """
-    calendar = {'metadata': _get_calendar_metadata(), 'dates': {}}
+    calendar = {'metadata': _get_calendar_metadata()}
     base = datetime.today()
     date_list = [base + timedelta(days=x) for x in range(-2, 365)]
     for dt in date_list:
@@ -1082,7 +1082,7 @@ def export_calendar(for_sources=False):
                         del p['custom']
                         del p['diaspora']
                         curr_cal[pkey] += [p]
-        calendar['dates'][dt.date().isoformat()] = curr_cal
+        calendar[dt.date().isoformat()] = curr_cal
 
     path = (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + CALENDAR_PATH
     write_doc(calendar, path)
