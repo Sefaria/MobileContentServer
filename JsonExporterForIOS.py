@@ -600,9 +600,10 @@ class TextAndLinksForIndex:
             end_seg_num = anchor_oref.toSections[-1] if anchor_oref.sections[0] == anchor_oref.toSections[0] else max(en_len, he_len)
             for x in range(start_seg_num, end_seg_num+1):
                 anchor_ref_dict[x] += [simple_link(link)]
-        for x in range (0,max(en_len,he_len)):
+        offset = oref._get_offset([sec-1 for sec in oref.sections])
+        for x in range (0, max(en_len, he_len)):
             curContent = {}
-            curContent["segmentNumber"] = str(x+1)
+            curContent["segmentNumber"] = str(x+1+offset)
             links = anchor_ref_dict[x+1]
             if len(links) > 0:
                 curContent["links"] = links
