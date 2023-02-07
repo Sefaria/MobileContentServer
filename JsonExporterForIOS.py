@@ -1204,7 +1204,7 @@ def clear_bundles():
 
 
 if __name__ == '__main__':
-    purged = True
+    purged = False
 
     def purge():
         global purged
