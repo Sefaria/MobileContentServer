@@ -1029,6 +1029,26 @@ def _get_calendar_metadata():
     return metadata
 
 
+def _get_custom_shorthand(title):
+    pattern = r'\s\(([A-Z\u05d0-\u05ea]+)\)$'
+    match = re.search(pattern, title)
+    if match:
+        title_without_custom = re.sub(pattern, "", title)
+        custom = match.group(1)
+        return title_without_custom, custom
+    return None, None
+
+
+def _pull_out_custom_shorthand(c):
+    if c['title']['en'].startswith("Haftarah "):
+        c['custom_shorthand'] = {}
+        for lang in ('en', 'he'):
+            title_without_custom, custom_shorthand = _get_custom_shorthand(c['title'][lang])
+            c['title'][lang] = title_without_custom
+            c['custom_shorthand'][lang] = custom_shorthand
+    return c
+
+
 def export_calendar(for_sources=False):
     """
     Writes a JSON file with all calendars from `get_all_calendar_items` for the next 365 days
@@ -1067,6 +1087,7 @@ def export_calendar(for_sources=False):
                 for ckey, c in list(cal_items_dict.items()):
                     c['custom'] = custom
                     c['diaspora'] = diaspora
+                    c = _pull_out_custom_shorthand(c)
                     cid = c.get('refs', [])[0] if c['hasRef'] else c.get('url', '')
                     del c['hasRef']
                     all_possibilities[ckey][cid] += [c]
