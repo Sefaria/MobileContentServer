@@ -1030,7 +1030,7 @@ def _get_calendar_metadata():
 
 
 def _get_custom_shorthand(title):
-    pattern = r'\s\(([A-Z\u05d0-\u05ea]+)\)$'
+    pattern = '\s\(([A-Z\u05d0-\u05ea]+)\)$'
     match = re.search(pattern, title)
     if match:
         title_without_custom = re.sub(pattern, "", title)
