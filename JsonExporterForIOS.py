@@ -391,6 +391,7 @@ def export_text_json(index):
 
     except OSError as e:
         if e.errno == errno.ENOSPC:
+            # disk out of space, try to clean up a little
             os_error_cleanup()
             raise OSError
         print("Error exporting %s: %s" % (index.title, e))
