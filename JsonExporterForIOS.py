@@ -13,6 +13,7 @@ import glob
 import time
 import traceback
 import requests
+import errno
 import p929
 import codecs
 from collections import defaultdict
@@ -388,9 +389,13 @@ def export_text_json(index):
             write_doc(doc, path)
         return True
 
-    except OSError:
-        os_error_cleanup()
-        raise OSError
+    except OSError as e:
+        if e.errno == errno.ENOSPC:
+            os_error_cleanup()
+            raise OSError
+        print("Error exporting %s: %s" % (index.title, e))
+        print(traceback.format_exc())
+        return False
     except Exception as e:
         print("Error exporting %s: %s" % (index.title, e))
         print(traceback.format_exc())
