@@ -480,7 +480,6 @@ class TextAndLinksForIndex:
                 'en_ja': en_chunk.ja(),
                 'he_ja': he_chunk.ja()
             }
-        # self.sorted_links = SortedLinks(index_obj)
 
     @staticmethod
     def get_version_details(chunk, default_versions):
@@ -532,7 +531,13 @@ class TextAndLinksForIndex:
             serialized.update(self.serialize_version_details_by_lang(chunk, default_versions, lang))
         return serialized
 
-    def section_data(self, oref: model.Ref, default_versions: dict) -> dict:
+    @staticmethod
+    def pad_array_to_index(array, index):
+        while len(array) != index - 1:
+            array += [None]
+        return array
+
+    def section_data(self, oref: model.Ref, default_versions: dict):
         """
         :param oref: section level Ref instance
         :param default_versions: {'en': Version, 'he': Version}
@@ -542,7 +547,7 @@ class TextAndLinksForIndex:
         prev, next_ref = oref.prev_section_ref(vstate=self.version_state),\
                          oref.next_section_ref(vstate=self.version_state)
 
-        data = {
+        metadata = {
             "ref": oref.normal(),
             "heRef": oref.he_normal(),
             "indexTitle": oref.index.title,
@@ -555,7 +560,7 @@ class TextAndLinksForIndex:
 
         node_title = oref.index_node.full_title()
         en_chunk, he_chunk = self._text_map[node_title]['en_chunk'], self._text_map[node_title]['he_chunk']
-        data.update(self.serialize_version_details(en_chunk, he_chunk, default_versions))
+        metadata.update(self.serialize_version_details(en_chunk, he_chunk, default_versions))
 
         en_text = self.strip_itags_recursive(self.get_text_array(node_title, oref.sections, 'en_ja'))
         he_text = self.strip_itags_recursive(self.get_text_array(node_title, oref.sections, 'he_ja'))
@@ -575,21 +580,25 @@ class TextAndLinksForIndex:
             for x in range(start_seg_num, end_seg_num+1):
                 anchor_ref_dict[x] += [simple_link(link)]
         offset = oref._get_offset([sec-1 for sec in oref.sections])
-        for x in range (0, max(en_len, he_len)):
-            curContent = {}
-            curContent["segmentNumber"] = str(x+1+offset)
+        en_serialized = []
+        he_serialized = []
+        links_serialized = []
+        for x in range(0, max(en_len, he_len)):
+            curr_seg_num = x + offset + 1
             links = anchor_ref_dict[x+1]
             if len(links) > 0:
-                curContent["links"] = links
+                links_serialized = self.pad_array_to_index(links_serialized, curr_seg_num)
+                links_serialized += [links]
 
             if x < en_len:
-                curContent["text"] = en_text[x]
+                en_serialized = self.pad_array_to_index(en_serialized, curr_seg_num)
+                en_serialized += [en_text[x]]
             if x < he_len:
-                curContent["he"] = he_text[x]
+                he_serialized = self.pad_array_to_index(he_serialized, curr_seg_num)
+                he_serialized += [he_text[x]]
+        metadata['links'] = links_serialized
 
-            data["content"] += [curContent]
-
-        return data
+        return en_serialized, he_serialized, metadata
 
 
 def export_index(index):
