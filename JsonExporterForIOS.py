@@ -202,9 +202,9 @@ def zip_last_text(title):
     """
     os.chdir(EXPORT_PATH)
 
-    zipPath = "%s/%s.%s" % (EXPORT_PATH, title, "zip")
+    zip_path = f"{EXPORT_PATH}/{title}.zip"
 
-    z = zipfile.ZipFile(zipPath, "w", zipfile.ZIP_DEFLATED)
+    z = zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED)
 
     for file in glob.glob("*.json"):
         # NOTE: this also will skip search_toc.json since it ends in `toc.json`
