@@ -467,7 +467,7 @@ class SortedLinks:
 
 class TextAndLinksForIndex:
 
-    def __init__(self, index_obj: model.Index):
+    def __init__(self, index_obj: model.Index, included_all_versions=False):
         self._text_map = {}
         self.version_state = index_obj.versionState()
         leaf_nodes = index_obj.nodes.get_leaf_nodes()
@@ -481,6 +481,59 @@ class TextAndLinksForIndex:
                 'he_ja': he_chunk.ja()
             }
         # self.sorted_links = SortedLinks(index_obj)
+
+    @staticmethod
+    def get_version_title(chunk, default_versions):
+        if not chunk.is_merged:
+            version = chunk.version()
+            if version and version.language in default_versions and version.versionTitle != default_versions[version.language].versionTitle:
+                #print "VERSION NOT DEFAULT {} ({})".format(oref, chunk.lang)
+                try:
+                    vnotes = version.versionNotes
+                except AttributeError:
+                    vnotes = None
+                try:
+                    vlicense = version.license
+                except AttributeError:
+                    vlicense = None
+                try:
+                    vsource = version.versionSource
+                except AttributeError:
+                    vsource = None
+                try:
+                    vnotesInHebrew = version.versionNotesInHebrew
+                except AttributeError:
+                    vnotesInHebrew = None
+                try:
+                    versionTitleInHebrew = version.versionTitleInHebrew
+                except AttributeError:
+                    versionTitleInHebrew = None
+
+                return version.versionTitle, vnotes, vlicense, vsource, versionTitleInHebrew, vnotesInHebrew
+            else:
+                return None, None, None, None, None, None # default version
+        else:
+            #merged
+            #print "MERGED SECTION {} ({})".format(oref, chunk.lang)
+            all_versions = set(chunk.sources)
+            merged_version = 'Merged from {}'.format(', '.join(all_versions))
+            return merged_version, None, None, None, None, None
+
+    def get_text_array(self, node_title, sections, ja_lang):
+        if sections:
+            try:
+                return self._text_map[node_title][ja_lang].get_element([j-1 for j in sections])
+            except IndexError:
+                return []
+        else:  # Ref(Pesach Haggadah, Kadesh) does not have sections, although it is a section ref
+            return self._text_map[node_title][ja_lang].array()
+
+    @staticmethod
+    def strip_itags_recursive(text_array):
+        if isinstance(text_array, str):
+            return TextChunk.strip_itags(text_array)
+        else:
+            return [TextAndLinksForIndex.strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
 
     def section_data(self, oref: model.Ref, default_versions: dict) -> dict:
         """
@@ -503,61 +556,10 @@ class TextAndLinksForIndex:
             "content": [],
         }
 
-        def get_version_title(chunk):
-            if not chunk.is_merged:
-                version = chunk.version()
-                if version and version.language in default_versions and version.versionTitle != default_versions[version.language].versionTitle:
-                    #print "VERSION NOT DEFAULT {} ({})".format(oref, chunk.lang)
-                    try:
-                        vnotes = version.versionNotes
-                    except AttributeError:
-                        vnotes = None
-                    try:
-                        vlicense = version.license
-                    except AttributeError:
-                        vlicense = None
-                    try:
-                        vsource = version.versionSource
-                    except AttributeError:
-                        vsource = None
-                    try:
-                        vnotesInHebrew = version.versionNotesInHebrew
-                    except AttributeError:
-                        vnotesInHebrew = None
-                    try:
-                        versionTitleInHebrew = version.versionTitleInHebrew
-                    except AttributeError:
-                        versionTitleInHebrew = None
-
-                    return version.versionTitle, vnotes, vlicense, vsource, versionTitleInHebrew, vnotesInHebrew
-                else:
-                    return None, None, None, None, None, None # default version
-            else:
-                #merged
-                #print "MERGED SECTION {} ({})".format(oref, chunk.lang)
-                all_versions = set(chunk.sources)
-                merged_version = 'Merged from {}'.format(', '.join(all_versions))
-                return merged_version, None, None, None, None, None
-
-        def get_text_array(sections, ja_lang):
-            if sections:
-                try:
-                    return self._text_map[node_title][ja_lang].get_element([j-1 for j in sections])
-                except IndexError:
-                    return []
-            else:  # Ref(Pesach Haggadah, Kadesh) does not have sections, although it is a section ref
-                return self._text_map[node_title][ja_lang].array()
-
-        def strip_itags_recursive(text_array):
-            if isinstance(text_array, str):
-                return TextChunk.strip_itags(text_array)
-            else:
-                return [strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
-
         node_title = oref.index_node.full_title()
         en_chunk, he_chunk = self._text_map[node_title]['en_chunk'], self._text_map[node_title]['en_chunk']
-        en_vtitle, en_vnotes, en_vlicense, en_vsource, en_vtitle_he, en_vnotes_he = get_version_title(en_chunk)
-        he_vtitle, he_vnotes, he_vlicense, he_vsource, he_vtitle_he, he_vnotes_he = get_version_title(he_chunk)
+        en_vtitle, en_vnotes, en_vlicense, en_vsource, en_vtitle_he, en_vnotes_he = self.get_version_title(en_chunk, default_versions)
+        he_vtitle, he_vnotes, he_vlicense, he_vsource, he_vtitle_he, he_vnotes_he = self.get_version_title(he_chunk, default_versions)
 
         if en_vtitle:
             data['versionTitle'] = en_vtitle
@@ -584,8 +586,8 @@ class TextAndLinksForIndex:
         if he_vnotes_he:
             data['heVersionNotesInHebrew'] = he_vnotes_he
 
-        en_text = strip_itags_recursive(get_text_array(oref.sections, 'en_ja'))
-        he_text = strip_itags_recursive(get_text_array(oref.sections, 'he_ja'))
+        en_text = self.strip_itags_recursive(self.get_text_array(node_title, oref.sections, 'en_ja'))
+        he_text = self.strip_itags_recursive(self.get_text_array(node_title, oref.sections, 'he_ja'))
 
         en_len = len(en_text)
         he_len = len(he_text)
