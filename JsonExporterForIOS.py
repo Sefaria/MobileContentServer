@@ -206,15 +206,10 @@ def zip_last_text(title):
 
     z = zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED)
 
-    for file in glob.glob("*.json"):
-        # NOTE: this also will skip search_toc.json since it ends in `toc.json`
-        if file.endswith("calendar.json") or file.endswith("toc.json") or file.endswith("last_updated.json") or file.endswith("hebrew_categories.json"):
-            continue
+    for file in glob.glob(f"./{title}*.json"):
         z.write(file)
         os.remove(file)
     z.close()
-
-    return
 
 
 def export_texts(skip_existing=False):
