@@ -483,38 +483,17 @@ class TextAndLinksForIndex:
         # self.sorted_links = SortedLinks(index_obj)
 
     @staticmethod
-    def get_version_title(chunk, default_versions):
+    def get_version_details(chunk, default_versions):
         if not chunk.is_merged:
             version = chunk.version()
+            attrs = ['versionTitle', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
             if version and version.language in default_versions and version.versionTitle != default_versions[version.language].versionTitle:
-                #print "VERSION NOT DEFAULT {} ({})".format(oref, chunk.lang)
-                try:
-                    vnotes = version.versionNotes
-                except AttributeError:
-                    vnotes = None
-                try:
-                    vlicense = version.license
-                except AttributeError:
-                    vlicense = None
-                try:
-                    vsource = version.versionSource
-                except AttributeError:
-                    vsource = None
-                try:
-                    vnotesInHebrew = version.versionNotesInHebrew
-                except AttributeError:
-                    vnotesInHebrew = None
-                try:
-                    versionTitleInHebrew = version.versionTitleInHebrew
-                except AttributeError:
-                    versionTitleInHebrew = None
-
-                return version.versionTitle, vnotes, vlicense, vsource, versionTitleInHebrew, vnotesInHebrew
+                return [getattr(version, attr, None) for attr in attrs]
             else:
-                return None, None, None, None, None, None # default version
+                # default version
+                return [None]*len(attrs)
         else:
-            #merged
-            #print "MERGED SECTION {} ({})".format(oref, chunk.lang)
+            # merged
             all_versions = set(chunk.sources)
             merged_version = 'Merged from {}'.format(', '.join(all_versions))
             return merged_version, None, None, None, None, None
@@ -534,6 +513,24 @@ class TextAndLinksForIndex:
             return TextChunk.strip_itags(text_array)
         else:
             return [TextAndLinksForIndex.strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
+
+    def serialize_version_details_by_lang(self, chunk, default_versions, lang):
+        serialized = {}
+        version_details = self.get_version_details(chunk, default_versions)
+        keys = ['versionTitle', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
+        for key, value in zip(keys, version_details):
+            if not value:
+                continue
+            if lang == "he":
+                key = f"he{key.capitalize()}"
+            serialized[key] = value
+        return serialized
+
+    def serialize_version_details(self, en_chunk, he_chunk, default_versions):
+        serialized = {}
+        for lang, chunk in (('en', en_chunk), ('he', he_chunk)):
+            serialized.update(self.serialize_version_details_by_lang(chunk, default_versions, lang))
+        return serialized
 
     def section_data(self, oref: model.Ref, default_versions: dict) -> dict:
         """
@@ -557,34 +554,8 @@ class TextAndLinksForIndex:
         }
 
         node_title = oref.index_node.full_title()
-        en_chunk, he_chunk = self._text_map[node_title]['en_chunk'], self._text_map[node_title]['en_chunk']
-        en_vtitle, en_vnotes, en_vlicense, en_vsource, en_vtitle_he, en_vnotes_he = self.get_version_title(en_chunk, default_versions)
-        he_vtitle, he_vnotes, he_vlicense, he_vsource, he_vtitle_he, he_vnotes_he = self.get_version_title(he_chunk, default_versions)
-
-        if en_vtitle:
-            data['versionTitle'] = en_vtitle
-        if he_vtitle:
-            data['heVersionTitle'] = he_vtitle
-        if en_vnotes:
-            data['versionNotes'] = en_vnotes
-        if he_vnotes:
-            data['heVersionNotes'] = he_vnotes
-        if en_vlicense:
-            data['license'] = en_vlicense
-        if he_vlicense:
-            data['heLicense'] = he_vlicense
-        if en_vsource:
-            data['versionSource'] = en_vsource
-        if he_vsource:
-            data['heVersionSource'] = he_vsource
-        if en_vtitle_he:
-            data['versionTitleInHebrew'] = en_vtitle_he
-        if he_vtitle_he:
-            data['heVersionTitleInHebrew'] = he_vtitle_he
-        if en_vnotes_he:
-            data['versionNotesInHebrew'] = en_vnotes_he
-        if he_vnotes_he:
-            data['heVersionNotesInHebrew'] = he_vnotes_he
+        en_chunk, he_chunk = self._text_map[node_title]['en_chunk'], self._text_map[node_title]['he_chunk']
+        data.update(self.serialize_version_details(en_chunk, he_chunk, default_versions))
 
         en_text = self.strip_itags_recursive(self.get_text_array(node_title, oref.sections, 'en_ja'))
         he_text = self.strip_itags_recursive(self.get_text_array(node_title, oref.sections, 'he_ja'))
@@ -624,7 +595,6 @@ class TextAndLinksForIndex:
 def export_index(index):
     """
     Writes the JSON of the index record of the text called `title`.
-    TODO - this function should probably take index as a parameter
     """
     try:
         index_counts = index.contents_with_content_counts()
