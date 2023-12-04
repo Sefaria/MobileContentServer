@@ -147,14 +147,6 @@ def keep_directory(func):
     return new_func
 
 
-def make_path(doc, format):
-    """
-    Returns the full path and file name for exporting 'doc' in 'format'.
-    """
-    path = "%s/%s.%s" % (EXPORT_PATH, doc["ref"], format)
-    return path
-
-
 def write_doc(doc, path):
     """
     Takes a dictionary `doc` ready to export and actually writes the file to the filesystem.
@@ -355,33 +347,42 @@ def export_text_json(index):
 
     returns True if export was successful
     """
-    # print(index.title)
-    defaultVersions = get_default_versions(index)
+    default_versions = get_default_versions(index)
 
     try:
         index_text = TextAndLinksForIndex(index)
         for oref in index.all_top_section_refs():
             if oref.is_section_level():
                 # depth 2 (or 1?)
-                doc = index_text.section_data(oref, defaultVersions)
+                text_by_vtitle, metadata = index_text.section_data(oref, default_versions)
             else:
                 sections = oref.all_subrefs()
-                doc = {
+                metadata = {
                     "ref": oref.normal(),
                     "sections": {}
                 }
+                text_by_vtitle = defaultdict(dict)
                 for section in sections:
                     if section.is_section_level():
                         # depth 3
-                        doc["sections"][section.normal()] = index_text.section_data(section, defaultVersions)
+                        # doc["sections"][section.normal()]
+                        curr_text_by_vtitle, curr_metadata = index_text.section_data(section, default_versions)
+                        metadata["sections"][section.normal()] = curr_metadata
+                        for vtitle, text_array in curr_text_by_vtitle.items():
+                            text_by_vtitle[vtitle][section.normal()] = text_array
                     else:
                         # depth 4
                         real_sections = section.all_subrefs()
                         for real_section in real_sections:
-                            doc["sections"][real_section.normal()] = index_text.section_data(real_section, defaultVersions)
+                            curr_text_by_vtitle, curr_metadata = index_text.section_data(real_section, default_versions)
+                            metadata["sections"][real_section.normal()] = curr_metadata
+                            for vtitle, text_array in curr_text_by_vtitle.items():
+                                text_by_vtitle[vtitle][real_section.normal()] = text_array
 
-            path = make_path(doc, "json")
-            write_doc(doc, path)
+            for vtitle, data in text_by_vtitle.items():
+                path = make_path(vtitle, metadata['ref'])
+                write_doc(data, path)
+            write_doc(metadata, metadata['ref'])
         return True
 
     except OSError as e:
@@ -396,6 +397,11 @@ def export_text_json(index):
         print("Error exporting %s: %s" % (index.title, e))
         print(traceback.format_exc())
         return False
+
+
+def make_path(version_title, tref):
+    import hashlib
+    return f"{tref}.{hashlib.md5(version_title.encode()).hexdigest()}.json"
 
 
 def simple_link(link):
@@ -413,58 +419,6 @@ def simple_link(link):
     return simple
 
 
-"""
-For each index:
-Load all leaf nodes.
-For each leaf node, load a jaggedArray. Map full node title to jaggedArray
-for oref in index.all_top_section_refs():
-    node_title = r.index_node.full_title()
-    the specific piece of the jaggedArray can be obtained with ja.get_element(oref.sections)
-"""
-
-
-class SortedLinks:
-    """
-    This class is supposed to support making a single large db lookup for links, then to dish them out bit by bit for
-    each section.
-    This algorithm doesn't seem to quite give the same results as calling wrapper.get_links directly on a smaller Ref.
-    The speedup given so far doesn't seem to be worth the effort in perfecting this, but we'll keep it here in case
-    something of this nature is required in the future.
-    """
-    def __init__(self, index_obj: model.Index):
-        self.index_obj = index_obj
-        self.node_numbers = {node.full_title(): j for j, node in enumerate(index_obj.nodes.get_leaf_nodes())}
-        self.link_iter = iter(self.get_sorted_links())
-        self._next_link = self.safe_next(self.link_iter)
-
-    def sort_key(self, tref):
-        oref = model.Ref(tref)
-        return [self.node_numbers[oref.index_node.full_title()]] + oref.sections
-
-    def get_sorted_links(self):
-        return sorted(get_links(self.index_obj.title, False, False), key=lambda x: self.sort_key(x['anchorRef']))
-
-    def get_matching_links(self, tref: str) -> list:
-        if self._next_link is None:
-            return []
-
-        oref = model.Ref(tref)
-        reg = re.compile(oref.regex())
-        link_list = []
-        while self._next_link and reg.match(self._next_link['anchorRef']):
-            link_list.append(self._next_link)
-            self._next_link = self.safe_next(self.link_iter)
-
-        return link_list
-
-    @staticmethod
-    def safe_next(iterator):
-        try:
-            return next(iterator)
-        except StopIteration:
-            return None
-
-
 class TextAndLinksForIndex:
 
     def __init__(self, index_obj: model.Index, included_all_versions=False):
@@ -473,13 +427,14 @@ class TextAndLinksForIndex:
         leaf_nodes = index_obj.nodes.get_leaf_nodes()
         for leaf in leaf_nodes:
             oref = leaf.ref()
-            en_chunk, he_chunk = oref.text('en'), oref.text('he')
-            self._text_map[leaf.full_title()] = {
-                'en_chunk': en_chunk,
-                'he_chunk': he_chunk,
-                'en_ja': en_chunk.ja(),
-                'he_ja': he_chunk.ja()
-            }
+            chunks = []
+            if included_all_versions:
+                for version in oref.versionset():
+                    chunks += [oref.text(version.language, version.versionTitle)]
+            else:
+                chunks = [oref.text('en'), oref.text('he')]
+            self._text_map[leaf.full_title()]['chunks'] = chunks
+            self._text_map[leaf.full_title()]['jas'] = [c.ja() for c in chunks]
 
     @staticmethod
     def get_version_details(chunk, default_versions):
@@ -497,14 +452,16 @@ class TextAndLinksForIndex:
             merged_version = 'Merged from {}'.format(', '.join(all_versions))
             return merged_version, None, None, None, None, None
 
-    def get_text_array(self, node_title, sections, ja_lang):
+    @staticmethod
+    def get_text_array(sections, ja):
         if sections:
             try:
-                return self._text_map[node_title][ja_lang].get_element([j-1 for j in sections])
+                return ja.get_element([j-1 for j in sections])
             except IndexError:
                 return []
-        else:  # Ref(Pesach Haggadah, Kadesh) does not have sections, although it is a section ref
-            return self._text_map[node_title][ja_lang].array()
+        else:
+            # Ref(Pesach Haggadah, Kadesh) does not have sections, although it is a section ref
+            return ja.array()
 
     @staticmethod
     def strip_itags_recursive(text_array):
@@ -513,29 +470,45 @@ class TextAndLinksForIndex:
         else:
             return [TextAndLinksForIndex.strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
 
-    def serialize_version_details_by_lang(self, chunk, default_versions, lang):
+    def serialize_version_details(self, chunk, default_versions):
         serialized = {}
         version_details = self.get_version_details(chunk, default_versions)
         keys = ['versionTitle', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
         for key, value in zip(keys, version_details):
             if not value:
                 continue
-            if lang == "he":
-                key = f"he{key.capitalize()}"
             serialized[key] = value
         return serialized
 
-    def serialize_version_details(self, en_chunk, he_chunk, default_versions):
-        serialized = {}
-        for lang, chunk in (('en', en_chunk), ('he', he_chunk)):
-            serialized.update(self.serialize_version_details_by_lang(chunk, default_versions, lang))
-        return serialized
+    def serialize_all_version_details(self, chunks, default_versions):
+        return [self.serialize_version_details(chunk, default_versions) for chunk in chunks]
 
     @staticmethod
     def pad_array_to_index(array, index):
         while len(array) != index - 1:
-            array += [None]
+            array.append(None)
         return array
+
+    @staticmethod
+    def _get_anchor_ref_dict(oref, section_length):
+        section_links = get_links(oref.normal(), False)
+        anchor_ref_dict = defaultdict(list)
+        for link in section_links:
+            anchor_oref = model.Ref(link["anchorRef"])
+            if not anchor_oref.is_segment_level() or len(anchor_oref.sections) == 0:
+                continue  # don't bother with section level links
+            start_seg_num = anchor_oref.sections[-1]
+            # make sure sections are the same in range
+            # TODO doesn't deal with links that span sections
+            end_seg_num = anchor_oref.toSections[-1] if anchor_oref.sections[0] == anchor_oref.toSections[0] else section_length
+            for x in range(start_seg_num, end_seg_num+1):
+                anchor_ref_dict[x] += [simple_link(link)]
+        return anchor_ref_dict
+
+    @staticmethod
+    def _get_base_file_name(tref, version_title):
+        import hashlib
+        return f"{tref}.{hashlib.md5(version_title.encode()).hexdigest()}.json"
 
     def section_data(self, oref: model.Ref, default_versions: dict):
         """
@@ -547,6 +520,8 @@ class TextAndLinksForIndex:
         prev, next_ref = oref.prev_section_ref(vstate=self.version_state),\
                          oref.next_section_ref(vstate=self.version_state)
 
+        node_title = oref.index_node.full_title()
+        chunks = self._text_map[node_title]['chunks']
         metadata = {
             "ref": oref.normal(),
             "heRef": oref.he_normal(),
@@ -555,50 +530,37 @@ class TextAndLinksForIndex:
             "sectionRef": oref.normal(),
             "next":    next_ref.normal() if next_ref else None,
             "prev": prev.normal() if prev else None,
-            "content": [],
+            "versions": self.serialize_all_version_details(chunks, default_versions)
         }
 
-        node_title = oref.index_node.full_title()
-        en_chunk, he_chunk = self._text_map[node_title]['en_chunk'], self._text_map[node_title]['he_chunk']
-        metadata.update(self.serialize_version_details(en_chunk, he_chunk, default_versions))
+        jas = self._text_map[node_title]['jas']
+        text_arrays = [
+            self.strip_itags_recursive(self.get_text_array(oref.sections, ja) for ja in jas)
+        ]
 
-        en_text = self.strip_itags_recursive(self.get_text_array(node_title, oref.sections, 'en_ja'))
-        he_text = self.strip_itags_recursive(self.get_text_array(node_title, oref.sections, 'he_ja'))
-
-        en_len = len(en_text)
-        he_len = len(he_text)
-        section_links = get_links(oref.normal(), False)
-        anchor_ref_dict = defaultdict(list)
-        for link in section_links:
-            anchor_oref = model.Ref(link["anchorRef"])
-            if not anchor_oref.is_segment_level() or len(anchor_oref.sections) == 0:
-                continue  # don't bother with section level links
-            start_seg_num = anchor_oref.sections[-1]
-            # make sure sections are the same in range
-            # TODO doesn't deal with links that span sections
-            end_seg_num = anchor_oref.toSections[-1] if anchor_oref.sections[0] == anchor_oref.toSections[0] else max(en_len, he_len)
-            for x in range(start_seg_num, end_seg_num+1):
-                anchor_ref_dict[x] += [simple_link(link)]
+        section_length = max(text_arrays, key=lambda a: len(a))
+        anchor_ref_dict = self._get_anchor_ref_dict(oref, section_length)
         offset = oref._get_offset([sec-1 for sec in oref.sections])
-        en_serialized = []
-        he_serialized = []
+        text_serialized_list = [[] for _ in text_arrays]
         links_serialized = []
-        for x in range(0, max(en_len, he_len)):
+        for x in range(0, section_length):
             curr_seg_num = x + offset + 1
             links = anchor_ref_dict[x+1]
             if len(links) > 0:
                 links_serialized = self.pad_array_to_index(links_serialized, curr_seg_num)
                 links_serialized += [links]
 
-            if x < en_len:
-                en_serialized = self.pad_array_to_index(en_serialized, curr_seg_num)
-                en_serialized += [en_text[x]]
-            if x < he_len:
-                he_serialized = self.pad_array_to_index(he_serialized, curr_seg_num)
-                he_serialized += [he_text[x]]
+            for iarray, text_array in enumerate(text_arrays):
+                serialized_array = text_serialized_list[iarray]
+                self.pad_array_to_index(serialized_array, curr_seg_num)
+                serialized_array.append(text_array[x])
         metadata['links'] = links_serialized
 
-        return en_serialized, he_serialized, metadata
+        text_by_vtitle = {
+            metadata['versions'][i]['versionTitle']: serialized_text
+            for i, serialized_text in enumerate(text_serialized_list)
+        }
+        return text_by_vtitle, metadata
 
 
 def export_index(index):
