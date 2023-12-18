@@ -350,39 +350,39 @@ def export_text_json(index):
     default_versions = get_default_versions(index)
 
     try:
-        index_text = TextAndLinksForIndex(index)
+        index_text = IndexExporter(index, included_all_versions=True)
         for oref in index.all_top_section_refs():
             if oref.is_section_level():
                 # depth 2 (or 1?)
-                text_by_vtitle, metadata = index_text.section_data(oref, default_versions)
+                text_by_version, metadata = index_text.section_data(oref, default_versions)
             else:
                 sections = oref.all_subrefs()
                 metadata = {
                     "ref": oref.normal(),
                     "sections": {}
                 }
-                text_by_vtitle = defaultdict(dict)
+                text_by_version = defaultdict(dict)
                 for section in sections:
                     if section.is_section_level():
                         # depth 3
                         # doc["sections"][section.normal()]
-                        curr_text_by_vtitle, curr_metadata = index_text.section_data(section, default_versions)
+                        curr_text_by_version, curr_metadata = index_text.section_data(section, default_versions)
                         metadata["sections"][section.normal()] = curr_metadata
-                        for vtitle, text_array in curr_text_by_vtitle.items():
-                            text_by_vtitle[vtitle][section.normal()] = text_array
+                        for vtitle, text_array in curr_text_by_version.items():
+                            text_by_version[vtitle][section.normal()] = text_array
                     else:
                         # depth 4
                         real_sections = section.all_subrefs()
                         for real_section in real_sections:
-                            curr_text_by_vtitle, curr_metadata = index_text.section_data(real_section, default_versions)
+                            curr_text_by_version, curr_metadata = index_text.section_data(real_section, default_versions)
                             metadata["sections"][real_section.normal()] = curr_metadata
-                            for vtitle, text_array in curr_text_by_vtitle.items():
-                                text_by_vtitle[vtitle][real_section.normal()] = text_array
+                            for vtitle, text_array in curr_text_by_version.items():
+                                text_by_version[vtitle][real_section.normal()] = text_array
 
-            for vtitle, data in text_by_vtitle.items():
-                path = make_path(vtitle, metadata['ref'])
+            for (vtitle, lang), data in text_by_version.items():
+                path = make_path(vtitle, lang, metadata['ref'])
                 write_doc(data, path)
-            write_doc(metadata, metadata['ref'])
+            write_doc(metadata, f"{EXPORT_PATH}/{metadata['ref']}.metadata.json")
         return True
 
     except OSError as e:
@@ -399,9 +399,9 @@ def export_text_json(index):
         return False
 
 
-def make_path(version_title, tref):
+def make_path(version_title, lang, tref):
     import hashlib
-    return f"{tref}.{hashlib.md5(version_title.encode()).hexdigest()}.json"
+    return f"{EXPORT_PATH}/{tref}.{hashlib.md5(version_title.encode()).hexdigest()}.{lang}.json"
 
 
 def simple_link(link):
@@ -419,7 +419,7 @@ def simple_link(link):
     return simple
 
 
-class TextAndLinksForIndex:
+class IndexExporter:
 
     def __init__(self, index_obj: model.Index, included_all_versions=False):
         self._text_map = {}
@@ -433,24 +433,27 @@ class TextAndLinksForIndex:
                     chunks += [oref.text(version.language, version.versionTitle)]
             else:
                 chunks = [oref.text('en'), oref.text('he')]
-            self._text_map[leaf.full_title()]['chunks'] = chunks
-            self._text_map[leaf.full_title()]['jas'] = [c.ja() for c in chunks]
+
+            self._text_map[leaf.full_title()] = {
+                'chunks': chunks,
+                'jas': [c.ja() for c in chunks],
+            }
 
     @staticmethod
     def get_version_details(chunk, default_versions):
+        attrs = ['versionTitle', 'language', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
         if not chunk.is_merged:
             version = chunk.version()
-            attrs = ['versionTitle', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
             if version and version.language in default_versions and version.versionTitle != default_versions[version.language].versionTitle:
                 return [getattr(version, attr, None) for attr in attrs]
             else:
                 # default version
-                return [None]*len(attrs)
+                return [version.versionTitle, version.language] + ([None]*(len(attrs)-2))
         else:
             # merged
             all_versions = set(chunk.sources)
             merged_version = 'Merged from {}'.format(', '.join(all_versions))
-            return merged_version, None, None, None, None, None
+            return [merged_version, chunk.lang] + ([None] * (len(attrs) - 2))
 
     @staticmethod
     def get_text_array(sections, ja):
@@ -468,12 +471,12 @@ class TextAndLinksForIndex:
         if isinstance(text_array, str):
             return TextChunk.strip_itags(text_array)
         else:
-            return [TextAndLinksForIndex.strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
+            return [IndexExporter.strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
 
     def serialize_version_details(self, chunk, default_versions):
         serialized = {}
         version_details = self.get_version_details(chunk, default_versions)
-        keys = ['versionTitle', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
+        keys = ['versionTitle', 'language', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
         for key, value in zip(keys, version_details):
             if not value:
                 continue
@@ -528,17 +531,17 @@ class TextAndLinksForIndex:
             "indexTitle": oref.index.title,
             "heTitle": oref.index.get_title('he'),
             "sectionRef": oref.normal(),
-            "next":    next_ref.normal() if next_ref else None,
+            "next": next_ref.normal() if next_ref else None,
             "prev": prev.normal() if prev else None,
             "versions": self.serialize_all_version_details(chunks, default_versions)
         }
 
         jas = self._text_map[node_title]['jas']
         text_arrays = [
-            self.strip_itags_recursive(self.get_text_array(oref.sections, ja) for ja in jas)
+            self.strip_itags_recursive(self.get_text_array(oref.sections, ja)) for ja in jas
         ]
 
-        section_length = max(text_arrays, key=lambda a: len(a))
+        section_length = max(len(a) for a in text_arrays)
         anchor_ref_dict = self._get_anchor_ref_dict(oref, section_length)
         offset = oref._get_offset([sec-1 for sec in oref.sections])
         text_serialized_list = [[] for _ in text_arrays]
@@ -551,16 +554,19 @@ class TextAndLinksForIndex:
                 links_serialized += [links]
 
             for iarray, text_array in enumerate(text_arrays):
+                if x >= len(text_array):
+                    continue
                 serialized_array = text_serialized_list[iarray]
                 self.pad_array_to_index(serialized_array, curr_seg_num)
                 serialized_array.append(text_array[x])
         metadata['links'] = links_serialized
 
-        text_by_vtitle = {
-            metadata['versions'][i]['versionTitle']: serialized_text
-            for i, serialized_text in enumerate(text_serialized_list)
-        }
-        return text_by_vtitle, metadata
+        text_by_version = {}
+        for i, serialized_text in enumerate(text_serialized_list):
+            curr_version = metadata['versions'][i]
+            vtitle = curr_version.get('versionTitle', 'DEFAULT')
+            text_by_version[(vtitle, curr_version['language'])] = serialized_text
+        return text_by_version, metadata
 
 
 def export_index(index):
