@@ -326,20 +326,6 @@ def has_updated(title, last_updated):
     return False
 
 
-def get_default_versions(index):
-    vdict = {}
-    versions = index.versionSet().array()
-
-    i = 0
-    while ('he' not in vdict or 'en' not in vdict) and i < len(versions):
-        v = versions[i]
-        if v.language not in vdict:
-            vdict[v.language] = v
-        i += 1
-
-    return vdict
-
-
 def export_text_json(index):
     """
     Takes a single document from the `texts` collection exports it, by chopping it up
@@ -347,14 +333,12 @@ def export_text_json(index):
 
     returns True if export was successful
     """
-    default_versions = get_default_versions(index)
-
     try:
         index_exporter = IndexExporter(index, included_all_versions=True)
         for oref in index.all_top_section_refs():
             if oref.is_section_level():
                 # depth 2 (or 1?)
-                text_by_version, metadata = index_exporter.section_data(oref, default_versions)
+                text_by_version, metadata = index_exporter.section_data(oref)
             else:
                 sections = oref.all_subrefs()
                 metadata = {
@@ -366,7 +350,7 @@ def export_text_json(index):
                     if section.is_section_level():
                         # depth 3
                         # doc["sections"][section.normal()]
-                        curr_text_by_version, curr_metadata = index_exporter.section_data(section, default_versions)
+                        curr_text_by_version, curr_metadata = index_exporter.section_data(section)
                         metadata["sections"][section.normal()] = curr_metadata
                         for vtitle, text_array in curr_text_by_version.items():
                             text_by_version[vtitle][section.normal()] = text_array
@@ -374,7 +358,7 @@ def export_text_json(index):
                         # depth 4
                         real_sections = section.all_subrefs()
                         for real_section in real_sections:
-                            curr_text_by_version, curr_metadata = index_exporter.section_data(real_section, default_versions)
+                            curr_text_by_version, curr_metadata = index_exporter.section_data(real_section)
                             metadata["sections"][real_section.normal()] = curr_metadata
                             for vtitle, text_array in curr_text_by_version.items():
                                 text_by_version[vtitle][real_section.normal()] = text_array
@@ -440,15 +424,11 @@ class IndexExporter:
             }
 
     @staticmethod
-    def get_version_details(chunk, default_versions):
-        attrs = ['versionTitle', 'language', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
+    def get_version_details(chunk):
+        attrs = ['versionTitle', 'language']
         if not chunk.is_merged:
             version = chunk.version()
-            if version and version.language in default_versions and version.versionTitle != default_versions[version.language].versionTitle:
-                return [getattr(version, attr, None) for attr in attrs]
-            else:
-                # default version
-                return [version.versionTitle, version.language] + ([None]*(len(attrs)-2))
+            return [getattr(version, attr, None) for attr in attrs]
         else:
             # merged
             all_versions = set(chunk.sources)
@@ -473,9 +453,9 @@ class IndexExporter:
         else:
             return [IndexExporter.strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
 
-    def serialize_version_details(self, chunk, default_versions):
+    def serialize_version_details(self, chunk):
         serialized = {}
-        version_details = self.get_version_details(chunk, default_versions)
+        version_details = self.get_version_details(chunk)
         keys = ['versionTitle', 'language', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
         for key, value in zip(keys, version_details):
             if not value:
@@ -483,8 +463,8 @@ class IndexExporter:
             serialized[key] = value
         return serialized
 
-    def serialize_all_version_details(self, chunks, default_versions):
-        return [self.serialize_version_details(chunk, default_versions) for chunk in chunks]
+    def serialize_all_version_details(self, chunks):
+        return [self.serialize_version_details(chunk) for chunk in chunks]
 
     @staticmethod
     def pad_array_to_index(array, index):
@@ -513,10 +493,9 @@ class IndexExporter:
         import hashlib
         return f"{tref}.{hashlib.md5(version_title.encode()).hexdigest()}.json"
 
-    def section_data(self, oref: model.Ref, default_versions: dict):
+    def section_data(self, oref: model.Ref):
         """
         :param oref: section level Ref instance
-        :param default_versions: {'en': Version, 'he': Version}
         :param prev_next: tuple, with the oref before oref and after oref (or None if this is the first/last ref)
         Returns a dictionary with all the data we care about for section level `oref`.
         """
@@ -533,7 +512,7 @@ class IndexExporter:
             "sectionRef": oref.normal(),
             "next": next_ref.normal() if next_ref else None,
             "prev": prev.normal() if prev else None,
-            "versions": self.serialize_all_version_details(chunks, default_versions)
+            "versions": self.serialize_all_version_details(chunks)
         }
 
         jas = self._text_map[node_title]['jas']
@@ -574,55 +553,9 @@ def export_index(index):
     Writes the JSON of the index record of the text called `title`.
     """
     try:
-        index_counts = index.contents_with_content_counts()
-        default_versions = get_default_versions(index)
-
-        if 'en' in default_versions:
-            index_counts['versionTitle'] = default_versions['en'].versionTitle
-            try:
-                index_counts['versionNotes'] = default_versions['en'].versionNotes
-            except AttributeError:
-                pass
-            try:
-                index_counts['license'] = default_versions['en'].license
-            except AttributeError:
-                pass
-            try:
-                index_counts['versionSource'] = default_versions['en'].versionSource
-            except AttributeError:
-                pass
-            try:
-                index_counts['versionTitleInHebrew'] = default_versions['en'].versionTitleInHebrew
-            except AttributeError:
-                pass
-            try:
-                index_counts['versionNotesInHebrew'] = default_versions['en'].versionNotesInHebrew
-            except AttributeError:
-                pass
-        if 'he' in default_versions:
-            index_counts['heVersionTitle'] = default_versions['he'].versionTitle
-            try:
-                index_counts['heVersionNotes'] = default_versions['he'].versionNotes
-            except AttributeError:
-                pass
-            try:
-                index_counts['heLicense'] = default_versions['he'].license
-            except AttributeError:
-                pass
-            try:
-                index_counts['heVersionSource'] = default_versions['he'].versionSource
-            except AttributeError:
-                pass
-            try:
-                index_counts['heVersionTitleInHebrew'] = default_versions['he'].versionTitleInHebrew
-            except AttributeError:
-                pass
-            try:
-                index_counts['heVersionNotesInHebrew'] = default_versions['he'].versionNotesInHebrew
-            except AttributeError:
-                pass
-        path  = "%s/%s_index.json" % (EXPORT_PATH, index.title)
-        write_doc(index_counts, path)
+        serialized_index = index.contents_with_content_counts()
+        path = f"{EXPORT_PATH}/{index.title}_index.json"
+        write_doc(serialized_index, path)
 
         return True
     except OSError:
