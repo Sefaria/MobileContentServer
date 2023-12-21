@@ -350,11 +350,11 @@ def export_text_json(index):
     default_versions = get_default_versions(index)
 
     try:
-        index_text = IndexExporter(index, included_all_versions=True)
+        index_exporter = IndexExporter(index, included_all_versions=True)
         for oref in index.all_top_section_refs():
             if oref.is_section_level():
                 # depth 2 (or 1?)
-                text_by_version, metadata = index_text.section_data(oref, default_versions)
+                text_by_version, metadata = index_exporter.section_data(oref, default_versions)
             else:
                 sections = oref.all_subrefs()
                 metadata = {
@@ -366,7 +366,7 @@ def export_text_json(index):
                     if section.is_section_level():
                         # depth 3
                         # doc["sections"][section.normal()]
-                        curr_text_by_version, curr_metadata = index_text.section_data(section, default_versions)
+                        curr_text_by_version, curr_metadata = index_exporter.section_data(section, default_versions)
                         metadata["sections"][section.normal()] = curr_metadata
                         for vtitle, text_array in curr_text_by_version.items():
                             text_by_version[vtitle][section.normal()] = text_array
@@ -374,7 +374,7 @@ def export_text_json(index):
                         # depth 4
                         real_sections = section.all_subrefs()
                         for real_section in real_sections:
-                            curr_text_by_version, curr_metadata = index_text.section_data(real_section, default_versions)
+                            curr_text_by_version, curr_metadata = index_exporter.section_data(real_section, default_versions)
                             metadata["sections"][real_section.normal()] = curr_metadata
                             for vtitle, text_array in curr_text_by_version.items():
                                 text_by_version[vtitle][real_section.normal()] = text_array
