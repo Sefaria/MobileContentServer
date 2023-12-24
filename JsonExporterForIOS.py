@@ -410,6 +410,7 @@ class IndexExporter:
                     chunks += [oref.text(version.language, version.versionTitle)]
             else:
                 chunks = [oref.text('en'), oref.text('he')]
+            chunks = [c for c in chunks if not c.is_empty()]
 
             self._text_map[leaf.full_title()] = {
                 'chunks': chunks,

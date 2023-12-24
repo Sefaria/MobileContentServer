@@ -21,19 +21,21 @@ def test_num_chunks(simple_index_exporter, all_version_index_exporter):
     assert len(all_version_index_exporter._text_map['Job']['chunks']) > 2
     
 
-@pytest.mark.parametrize(('title', 'tref', 'include_all_versions'), [
-    ['Job', 'Job 17', False],
-    ['Job', 'Job 17', True],
-    ['Derashat Shabbat HaGadol', 'Derashat Shabbat HaGadol 1', False],
+@pytest.mark.parametrize(('title', 'tref', 'include_all_versions', 'expected_num_versions'), [
+    ['Job', 'Job 17', False, 2],
+    ['Job', 'Job 17', True, None],
+    ['Derashat Shabbat HaGadol', 'Derashat Shabbat HaGadol 1', False, 1],
 ])
-def test_section_data(title, tref, include_all_versions):
+def test_section_data(title, tref, include_all_versions, expected_num_versions):
     index = library.get_index(title)
     exporter = IndexExporter(index, include_all_versions)
     oref = model.Ref(tref)
-    num_versions = len(index.versionSet()) if include_all_versions else 2
+    num_versions = len(index.versionSet()) if include_all_versions else expected_num_versions
     num_segments = len(oref.all_segment_refs())
     text_by_version, metadata = exporter.section_data(oref)
     assert len(text_by_version) == num_versions
     for key, value in text_by_version.items():
         assert len(value) <= num_segments
-        print(key)
+        vtitle, lang = key
+        assert vtitle is not None
+        assert lang is not None
