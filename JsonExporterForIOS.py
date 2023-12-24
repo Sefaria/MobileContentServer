@@ -326,6 +326,10 @@ def has_updated(title, last_updated):
     return False
 
 
+def should_include_all_versions(index):
+    return index.get_primary_corpus() == "Tanakh"
+
+
 def export_text_json(index):
     """
     Takes a single document from the `texts` collection exports it, by chopping it up
@@ -334,7 +338,7 @@ def export_text_json(index):
     returns True if export was successful
     """
     try:
-        index_exporter = IndexExporter(index, included_all_versions=True)
+        index_exporter = IndexExporter(index, include_all_versions=should_include_all_versions(index))
         for oref in index.all_top_section_refs():
             if oref.is_section_level():
                 # depth 2 (or 1?)
@@ -405,14 +409,14 @@ def simple_link(link):
 
 class IndexExporter:
 
-    def __init__(self, index_obj: model.Index, included_all_versions=False):
+    def __init__(self, index_obj: model.Index, include_all_versions=False):
         self._text_map = {}
         self.version_state = index_obj.versionState()
         leaf_nodes = index_obj.nodes.get_leaf_nodes()
         for leaf in leaf_nodes:
             oref = leaf.ref()
             chunks = []
-            if included_all_versions:
+            if include_all_versions:
                 for version in oref.versionset():
                     chunks += [oref.text(version.language, version.versionTitle)]
             else:
