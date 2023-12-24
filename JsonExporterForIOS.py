@@ -1,26 +1,20 @@
-# -*- coding: utf-8 -*-
-
 import sys
 import os
-import csv
 try:
     import re2 as re
 except ImportError:
     import re
 import json
+from tqdm import tqdm
 import zipfile
 import glob
 import time
 import traceback
 import requests
 import errno
-import p929
-import codecs
 from collections import defaultdict
 from functools import reduce
 from shutil import rmtree
-from random import random
-from pprint import pprint
 from datetime import timedelta
 from datetime import datetime
 import dateutil.parser
@@ -37,13 +31,9 @@ import sefaria.model as model
 from sefaria.client.wrapper import get_links
 from sefaria.model.text import TextChunk, Version
 from sefaria.model.schema import Term
-from sefaria.utils.talmud import section_to_daf
 from sefaria.utils.calendars import get_all_calendar_items
-from sefaria.utils.hebrew import hebrew_parasha_name
 from sefaria.system.exceptions import InputError, BookNameError
-from sefaria.system.exceptions import NoVersionFoundError
 from sefaria.model.history import HistorySet
-from sefaria.system.database import db
 
 """
 list all version titles and notes in index
@@ -210,8 +200,7 @@ def export_texts(skip_existing=False):
     TODO -- check history and last_updated to only export texts with changes
     """
     indexes = model.library.all_index_records()
-    for index in reversed(indexes):
-        print(index.title)
+    for index in tqdm(reversed(indexes), desc='export all', total=len(indexes)):
         if skip_existing and os.path.isfile("%s/%s.zip" % (EXPORT_PATH, index.title)):
             continue
         success = export_text(index)
@@ -268,7 +257,7 @@ def export_updated():
             print("Skipping update for non-existent book '{}'".format(t))
 
     updated_books = [x.title for x in updated_indexes]
-    for index in updated_indexes:
+    for index in tqdm(updated_indexes, desc='export updated'):
         success = export_text(index)
         if not success:
             updated_books.remove(index.title) # don't include books which dont export
@@ -437,7 +426,7 @@ class IndexExporter:
             # merged
             all_versions = set(chunk.sources)
             merged_version = 'Merged from {}'.format(', '.join(all_versions))
-            return [merged_version, chunk.lang] + ([None] * (len(attrs) - 2))
+            return [merged_version, chunk.lang]
 
     @staticmethod
     def get_text_array(sections, ja):
@@ -460,10 +449,8 @@ class IndexExporter:
     def serialize_version_details(self, chunk):
         serialized = {}
         version_details = self.get_version_details(chunk)
-        keys = ['versionTitle', 'language', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
+        keys = ['versionTitle', 'language']
         for key, value in zip(keys, version_details):
-            if not value:
-                continue
             serialized[key] = value
         return serialized
 
@@ -547,7 +534,7 @@ class IndexExporter:
         text_by_version = {}
         for i, serialized_text in enumerate(text_serialized_list):
             curr_version = metadata['versions'][i]
-            vtitle = curr_version.get('versionTitle', 'DEFAULT')
+            vtitle = curr_version['versionTitle']
             text_by_version[(vtitle, curr_version['language'])] = serialized_text
         return text_by_version, metadata
 
