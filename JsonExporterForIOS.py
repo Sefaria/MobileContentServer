@@ -554,6 +554,7 @@ def export_index(index):
     """
     try:
         serialized_index = index.contents_with_content_counts()
+        annotate_versions_on_index(index.title, serialized_index)
         path = f"{EXPORT_PATH}/{index.title}_index.json"
         write_doc(serialized_index, path)
 
@@ -566,6 +567,22 @@ def export_index(index):
         print(traceback.format_exc())
 
         return False
+
+
+def annotate_versions_on_index(title, serialized_index: dict):
+    vkeys_to_remove = ['versionTitle', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
+    for key in vkeys_to_remove:
+        serialized_index.pop(key, None)
+        he_key = 'he' + key[0].capitalize() + key[1:]
+        serialized_index.pop(he_key, None)
+    serialized_index['versions'] = model.Ref(title).version_list()
+
+    # remove empty values
+    for version in serialized_index['versions']:
+        version_items = list(version.items())
+        for key, value in version_items:
+            if isinstance(value, str) and len(value) == 0:
+                version.pop(key, None)
 
 
 def get_indexes_in_category(cats, toc):
