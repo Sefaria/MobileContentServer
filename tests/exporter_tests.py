@@ -39,3 +39,15 @@ def test_section_data(title, tref, include_all_versions, expected_num_versions):
         vtitle, lang = key
         assert vtitle is not None
         assert lang is not None
+
+
+def test_merged_chunk():
+    """
+    Test that top priority version title is chosen for a merged chunk
+    """
+    index = library.get_index("Berakhot")
+    exporter = IndexExporter(index, False)
+    vtitle, lang = exporter.get_version_details(exporter._text_map['Berakhot']['chunks'][0])
+    assert "William Davidson" in vtitle
+    assert lang == "en"
+

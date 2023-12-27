@@ -425,9 +425,9 @@ class IndexExporter:
             return [getattr(version, attr, None) for attr in attrs]
         else:
             # merged
-            all_versions = set(chunk.sources)
-            merged_version = 'Merged from {}'.format(', '.join(all_versions))
-            return [merged_version, chunk.lang]
+            versions_by_title = {v.versionTitle: v for v in chunk._versions}
+            top_version_title = max(chunk.sources, key=lambda vtitle: getattr(versions_by_title[vtitle], 'priority', -1))
+            return [top_version_title, chunk.lang]
 
     @staticmethod
     def get_text_array(sections, ja):
