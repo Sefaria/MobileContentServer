@@ -376,9 +376,13 @@ def export_text_json(index):
         return False
 
 
-def make_path(version_title, lang, tref):
+def get_version_hash(version_title):
     import hashlib
-    return f"{EXPORT_PATH}/{tref}.{hashlib.md5(version_title.encode()).hexdigest()}.{lang}.json"
+    return hashlib.md5(version_title.encode()).hexdigest()[:8]
+
+
+def make_path(version_title, lang, tref):
+    return f"{EXPORT_PATH}/{tref}.{get_version_hash(version_title)}.{lang}.json"
 
 
 def simple_link(link):
@@ -468,8 +472,7 @@ class IndexExporter:
 
     @staticmethod
     def _get_base_file_name(tref, version_title):
-        import hashlib
-        return f"{tref}.{hashlib.md5(version_title.encode()).hexdigest()}.json"
+        return f"{tref}.{get_version_hash(version_title)}.json"
 
     def section_data(self, oref: model.Ref):
         """
