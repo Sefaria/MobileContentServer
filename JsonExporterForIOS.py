@@ -49,7 +49,7 @@ or
 any section has a version different than the default version
 """
 
-SCHEMA_VERSION = "6"  # remove itags from text, make calendars future-proof
+SCHEMA_VERSION = "7"  # alternate versions offline
 EXPORT_PATH = SEFARIA_EXPORT_PATH + "/" + SCHEMA_VERSION
 
 TOC_PATH          = "/toc.json"
@@ -164,7 +164,7 @@ def os_error_cleanup():
 def alert_slack(message, icon_emoji):
     if DEBUG_MODE:
         print(message)
-        return 
+        return
     try:
         slack_url = os.environ['SLACK_URL']
     except KeyError:
@@ -405,8 +405,9 @@ class IndexExporter:
         for leaf in leaf_nodes:
             oref = leaf.ref()
             chunks = []
+            all_versions = oref.versionset()
             if include_all_versions:
-                for version in oref.versionset():
+                for version in all_versions:
                     chunks += [oref.text(version.language, version.versionTitle)]
             else:
                 chunks = [oref.text('en'), oref.text('he')]
@@ -414,20 +415,9 @@ class IndexExporter:
 
             self._text_map[leaf.full_title()] = {
                 'chunks': chunks,
+                'all_versions': all_versions,
                 'jas': [c.ja() for c in chunks],
             }
-
-    @staticmethod
-    def get_version_details(chunk):
-        attrs = ['versionTitle', 'language']
-        if not chunk.is_merged:
-            version = chunk.version()
-            return [getattr(version, attr, None) for attr in attrs]
-        else:
-            # merged
-            versions_by_title = {v.versionTitle: v for v in chunk._versions}
-            top_version_title = max(chunk.sources, key=lambda vtitle: getattr(versions_by_title[vtitle], 'priority', -1))
-            return [top_version_title, chunk.lang]
 
     @staticmethod
     def get_text_array(sections, ja):
@@ -447,16 +437,12 @@ class IndexExporter:
         else:
             return [IndexExporter.strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
 
-    def serialize_version_details(self, chunk):
-        serialized = {}
-        version_details = self.get_version_details(chunk)
-        keys = ['versionTitle', 'language']
-        for key, value in zip(keys, version_details):
-            serialized[key] = value
-        return serialized
+    @staticmethod
+    def serialize_version_details(version):
+        return {'versionTitle': version.versionTitle, 'language': version.language}
 
-    def serialize_all_version_details(self, chunks):
-        return [self.serialize_version_details(chunk) for chunk in chunks]
+    def serialize_all_version_details(self, versions):
+        return [self.serialize_version_details(version) for version in versions]
 
     @staticmethod
     def pad_array_to_index(array, index):
@@ -504,7 +490,7 @@ class IndexExporter:
             "sectionRef": oref.normal(),
             "next": next_ref.normal() if next_ref else None,
             "prev": prev.normal() if prev else None,
-            "versions": self.serialize_all_version_details(chunks)
+            "versions": self.serialize_all_version_details(self._text_map[node_title]['all_versions'])
         }
 
         jas = self._text_map[node_title]['jas']
@@ -1052,7 +1038,7 @@ def purge_cloudflare_cache(titles):
         titles = [t.title for t in model.library.all_index_records()]
     files = ["%s/%s/%s.zip" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in titles]
     files += ["%s/%s/%s.json" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in ("toc", "topic_toc", "search_toc", "last_updated", "calendar", "hebrew_categories", "people", "packages")]
-    files += [f'{CLOUDFLARE_PATH}/{SCHEMA_VERSION}/{f}' for f in recursive_listdir('./static/ios-export/6/bundles')]
+    files += [f'{CLOUDFLARE_PATH}/{SCHEMA_VERSION}/{f}' for f in recursive_listdir(f'./static/ios-export/{SCHEMA_VERSION}/bundles')]
     url = 'https://api.cloudflare.com/client/v4/zones/%s/purge_cache' % CLOUDFLARE_ZONE
 
     def send_purge(file_list):
