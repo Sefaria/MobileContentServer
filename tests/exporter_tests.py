@@ -47,7 +47,6 @@ def test_merged_chunk():
     """
     index = library.get_index("Berakhot")
     exporter = IndexExporter(index, False)
-    vtitle, lang = exporter.get_version_details(exporter._text_map['Berakhot']['chunks'][0])
-    assert "William Davidson" in vtitle
-    assert lang == "en"
+    text_by_version, metadata = exporter.section_data(model.Ref("Berakhot 2a"))
+    assert ('William Davidson Edition - English', 'en') in text_by_version
 
