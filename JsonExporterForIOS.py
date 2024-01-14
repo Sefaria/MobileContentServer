@@ -200,7 +200,7 @@ def export_texts(skip_existing=False):
     TODO -- check history and last_updated to only export texts with changes
     """
     indexes = model.library.all_index_records()
-    for index in tqdm(reversed(indexes), desc='export all', total=len(indexes)):
+    for index in tqdm(reversed(indexes), desc='export all', total=len(indexes), file=sys.stdout):
         if skip_existing and os.path.isfile("%s/%s.zip" % (EXPORT_PATH, index.title)):
             continue
 
@@ -208,7 +208,7 @@ def export_texts(skip_existing=False):
         success = export_text(index)
         if not success:
             indexes.remove(index)
-        print(f"--- {index.title} - {round(time.time() - start_time, 2)} seconds ---")
+        tqdm.write(f"--- {index.title} - {round(time.time() - start_time, 2)} seconds ---")
 
     write_last_updated([i.title for i in indexes])
 
