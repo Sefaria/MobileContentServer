@@ -336,9 +336,12 @@ def export_text_json(index):
                 sections = oref.all_subrefs()
                 metadata = {
                     "ref": oref.normal(),
-                    "sections": {}
+                    "sections": {},
                 }
-                text_by_version = defaultdict(dict)
+                text_by_version = defaultdict(lambda: {
+                    "ref": oref.normal(),
+                    "sections": {},
+                })
                 for section in sections:
                     if section.is_section_level():
                         # depth 3
@@ -346,7 +349,7 @@ def export_text_json(index):
                         curr_text_by_version, curr_metadata = index_exporter.section_data(section)
                         metadata["sections"][section.normal()] = curr_metadata
                         for vtitle, text_array in curr_text_by_version.items():
-                            text_by_version[vtitle][section.normal()] = text_array
+                            text_by_version[vtitle]["sections"][section.normal()] = text_array
                     else:
                         # depth 4
                         real_sections = section.all_subrefs()
@@ -354,7 +357,7 @@ def export_text_json(index):
                             curr_text_by_version, curr_metadata = index_exporter.section_data(real_section)
                             metadata["sections"][real_section.normal()] = curr_metadata
                             for vtitle, text_array in curr_text_by_version.items():
-                                text_by_version[vtitle][real_section.normal()] = text_array
+                                text_by_version[vtitle]["sections"][real_section.normal()] = text_array
 
             for (vtitle, lang), data in text_by_version.items():
                 path = make_path(vtitle, lang, metadata['ref'])
