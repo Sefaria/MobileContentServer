@@ -203,9 +203,12 @@ def export_texts(skip_existing=False):
     for index in tqdm(reversed(indexes), desc='export all', total=len(indexes)):
         if skip_existing and os.path.isfile("%s/%s.zip" % (EXPORT_PATH, index.title)):
             continue
+
+        start_time = time.time()
         success = export_text(index)
         if not success:
             indexes.remove(index)
+        print(f"--- {index.title} - {round(time.time() - start_time, 2)} seconds ---")
 
     write_last_updated([i.title for i in indexes])
 
@@ -487,7 +490,6 @@ class IndexExporter:
                          oref.next_section_ref(vstate=self.version_state)
 
         node_title = oref.index_node.full_title()
-        chunks = self._text_map[node_title]['chunks']
         metadata = {
             "ref": oref.normal(),
             "heRef": oref.he_normal(),
@@ -525,11 +527,21 @@ class IndexExporter:
         metadata['links'] = links_serialized
 
         text_by_version = {}
+        chunks = self._text_map[node_title]['chunks']
         for i, serialized_text in enumerate(text_serialized_list):
-            curr_version = metadata['versions'][i]
-            vtitle = curr_version['versionTitle']
-            text_by_version[(vtitle, curr_version['language'])] = serialized_text
+            vdeets = self.get_version_details(chunks[i])
+            text_by_version[vdeets] = serialized_text
         return text_by_version, metadata
+
+    @staticmethod
+    def get_version_details(chunk):
+        if not chunk.is_merged:
+            version = chunk.version()
+            return version.versionTitle, version.language
+        # merged
+        versions_by_title = {v.versionTitle: v for v in chunk._versions}
+        top_version_title = max(chunk.sources, key=lambda vtitle: getattr(versions_by_title[vtitle], 'priority', -1))
+        return top_version_title, chunk.lang
 
 
 def export_index(index):
