@@ -29,7 +29,7 @@ django.setup()
 
 import sefaria.model as model
 from sefaria.client.wrapper import get_links
-from sefaria.model.text import TextChunk, Version
+from sefaria.model.text import TextChunk, Version, VersionSet
 from sefaria.model.schema import Term
 from sefaria.utils.calendars import get_all_calendar_items
 from sefaria.system.exceptions import InputError, BookNameError
@@ -415,7 +415,7 @@ class IndexExporter:
         for leaf in leaf_nodes:
             oref = leaf.ref()
             chunks = []
-            all_versions = oref.versionset()
+            all_versions = VersionSet(oref.condition_query(), proj={"chapter": False})
             if include_all_versions:
                 for version in all_versions:
                     chunks += [oref.text(version.language, version.versionTitle)]
@@ -571,7 +571,7 @@ def annotate_versions_on_index(title, serialized_index: dict):
         serialized_index.pop(key, None)
         he_key = 'he' + key[0].capitalize() + key[1:]
         serialized_index.pop(he_key, None)
-    serialized_index['versions'] = model.Ref(title).version_list()
+    serialized_index['versions'] = [v.contents() for v in VersionSet({"title": title}, proj={"chapter": False})]
 
     # remove empty values
     for version in serialized_index['versions']:
