@@ -530,6 +530,10 @@ class IndexExporter:
         chunks = self._text_map[node_title]['chunks']
         for i, serialized_text in enumerate(text_serialized_list):
             vdeets = self.get_version_details(chunks[i])
+            if len(serialized_text) == 0:
+                # this version is empty for this section. remove it.
+                metadata['versions'].remove({'versionTitle': vdeets[0], 'language': vdeets[1]})
+                continue
             text_by_version[vdeets] = serialized_text
         return text_by_version, metadata
 
