@@ -34,6 +34,7 @@ from sefaria.model.schema import Term
 from sefaria.utils.calendars import get_all_calendar_items
 from sefaria.system.exceptions import InputError, BookNameError
 from sefaria.model.history import HistorySet
+from sefaria.datatype.jagged_array import JaggedTextArray
 
 """
 list all version titles and notes in index
@@ -406,31 +407,55 @@ def simple_link(link):
     return simple
 
 
+class SimpleTextChunk:
+
+    def __init__(self, oref: model.Ref, version: Version):
+        self.version = version
+        text_array = self.get_text_array_from_version(oref)
+        self.ja = JaggedTextArray(text_array)
+
+    def get_text_array_from_version(self, oref: model.Ref):
+        text_array, _, _ = self.version.get_node_by_key_list(oref.index_node.version_address())
+        return text_array
+
+    def is_empty(self) -> bool:
+        return self.ja.is_empty()
+
+
 class IndexExporter:
 
     def __init__(self, index_obj: model.Index, include_all_versions=False):
         self._text_map = {}
         self.version_state = index_obj.versionState()
         leaf_nodes = index_obj.nodes.get_leaf_nodes()
+        all_versions = VersionSet({"title": index_obj.title})
+
         for leaf in leaf_nodes:
             oref = leaf.ref()
-            chunks = []
-            all_versions = VersionSet(oref.condition_query(), proj={"chapter": False})
             if include_all_versions:
-                for version in all_versions:
-                    chunks += [oref.text(version.language, version.versionTitle)]
+                simple_chunks = [SimpleTextChunk(oref, v) for v in all_versions]
             else:
-                chunks = [oref.text('en'), oref.text('he')]
-            chunks = [c for c in chunks if not c.is_empty()]
+                default_versions = [self.get_default_version_by_lang(all_versions, lang) for lang in ('en', 'he')]
+                default_versions = [v for v in default_versions if v is not None]
+                simple_chunks = [SimpleTextChunk(oref, v) for v in default_versions]
+            simple_chunks = [c for c in simple_chunks if not c.is_empty()]
 
             self._text_map[leaf.full_title()] = {
-                'chunks': chunks,
+                'chunks': simple_chunks,
                 'all_versions': all_versions,
-                'jas': [c.ja() for c in chunks],
+                'jas': [c.ja for c in simple_chunks],
             }
 
+
     @staticmethod
-    def get_text_array(sections, ja):
+    def get_default_version_by_lang(versions: list, lang: str):
+        """
+        Default is first version that matches `lang`
+        """
+        return next((v for v in versions if v.language == lang), None)
+
+    @staticmethod
+    def get_text_array_from_ja(sections, ja):
         if sections:
             try:
                 return ja.get_element([j-1 for j in sections])
@@ -503,7 +528,7 @@ class IndexExporter:
 
         jas = self._text_map[node_title]['jas']
         text_arrays = [
-            self.strip_itags_recursive(self.get_text_array(oref.sections, ja)) for ja in jas
+            self.strip_itags_recursive(self.get_text_array_from_ja(oref.sections, ja)) for ja in jas
         ]
 
         section_length = max(len(a) for a in text_arrays)
@@ -538,14 +563,9 @@ class IndexExporter:
         return text_by_version, metadata
 
     @staticmethod
-    def get_version_details(chunk):
-        if not chunk.is_merged:
-            version = chunk.version()
-            return version.versionTitle, version.language
-        # merged
-        versions_by_title = {v.versionTitle: v for v in chunk._versions}
-        top_version_title = max(chunk.sources, key=lambda vtitle: getattr(versions_by_title[vtitle], 'priority', -1))
-        return top_version_title, chunk.lang
+    def get_version_details(chunk: SimpleTextChunk):
+        version = chunk.version
+        return version.versionTitle, version.language
 
 
 def export_index(index):
