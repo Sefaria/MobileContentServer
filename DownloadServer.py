@@ -15,6 +15,9 @@ try:
 except ImportError:
     DEBUG_MODE = False
 
+# schema version is now required when requesting an API view that is schema specific
+# in the case it's not provided, we will fall back to the last version that allowed it to not be defined (which is buggy behavior)
+DEFAULT_API_SCHEMA_VERSION = "6"
 app = Flask(__name__)
 URL_BASE = 'static/ios-export'
 
@@ -64,15 +67,19 @@ def create_zip_bundle(book_list, zip_path, zip_dirname, file_locations):
         return
 
 
+def get_schema_from_request(req):
+    try:
+        return int(req.args.get('schema_version'))
+    except (ValueError, TypeError):
+        return DEFAULT_API_SCHEMA_VERSION
+
+
 @app.route('/makeBundle', methods=['POST'])
 def make_bundle():
     if not request.json or not request.json.get('books'):
         return Response(status=400, response='Invalid JSON')
 
-    try:
-        schema_version = int(request.args.get('schema_version', SCHEMA_VERSION))
-    except ValueError:
-        schema_version = SCHEMA_VERSION
+    schema_version = get_schema_from_request(request)
     export_path = f'{SEFARIA_EXPORT_PATH}/{schema_version}'
 
     book_list = [f'{b}.zip' for b in request.json['books']]
@@ -97,11 +104,7 @@ def get_package_paths():
     if not request.args or not request.args.get('package'):
         return jsonify([])
     package_name = request.args['package']
-    try:
-        schema_version = int(request.args.get('schema_version', SCHEMA_VERSION))
-    except ValueError:
-        schema_version = SCHEMA_VERSION
-
+    schema_version = get_schema_from_request(request)
     base_path = f'{SEFARIA_EXPORT_PATH}/{schema_version}/bundles'
     return jsonify(url_stubs(f'{base_path}/{package_name}', schema_version))
 
