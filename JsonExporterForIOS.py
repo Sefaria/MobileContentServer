@@ -1,26 +1,20 @@
-# -*- coding: utf-8 -*-
-
 import sys
 import os
-import csv
 try:
     import re2 as re
 except ImportError:
     import re
 import json
+from tqdm import tqdm
 import zipfile
 import glob
 import time
 import traceback
 import requests
 import errno
-import p929
-import codecs
 from collections import defaultdict
 from functools import reduce
 from shutil import rmtree
-from random import random
-from pprint import pprint
 from datetime import timedelta
 from datetime import datetime
 import dateutil.parser
@@ -35,15 +29,12 @@ django.setup()
 
 import sefaria.model as model
 from sefaria.client.wrapper import get_links
-from sefaria.model.text import TextChunk, Version
+from sefaria.model.text import TextChunk, Version, VersionSet
 from sefaria.model.schema import Term
-from sefaria.utils.talmud import section_to_daf
 from sefaria.utils.calendars import get_all_calendar_items
-from sefaria.utils.hebrew import hebrew_parasha_name
 from sefaria.system.exceptions import InputError, BookNameError
-from sefaria.system.exceptions import NoVersionFoundError
 from sefaria.model.history import HistorySet
-from sefaria.system.database import db
+from sefaria.datatype.jagged_array import JaggedTextArray
 
 """
 list all version titles and notes in index
@@ -59,7 +50,7 @@ or
 any section has a version different than the default version
 """
 
-SCHEMA_VERSION = "6"  # remove itags from text, make calendars future-proof
+SCHEMA_VERSION = "7"  # alternate versions offline
 EXPORT_PATH = SEFARIA_EXPORT_PATH + "/" + SCHEMA_VERSION
 
 TOC_PATH          = "/toc.json"
@@ -147,14 +138,6 @@ def keep_directory(func):
     return new_func
 
 
-def make_path(doc, format):
-    """
-    Returns the full path and file name for exporting 'doc' in 'format'.
-    """
-    path = "%s/%s.%s" % (EXPORT_PATH, doc["ref"], format)
-    return path
-
-
 def write_doc(doc, path):
     """
     Takes a dictionary `doc` ready to export and actually writes the file to the filesystem.
@@ -182,7 +165,7 @@ def os_error_cleanup():
 def alert_slack(message, icon_emoji):
     if DEBUG_MODE:
         print(message)
-        return 
+        return
     try:
         slack_url = os.environ['SLACK_URL']
     except KeyError:
@@ -202,19 +185,14 @@ def zip_last_text(title):
     """
     os.chdir(EXPORT_PATH)
 
-    zipPath = "%s/%s.%s" % (EXPORT_PATH, title, "zip")
+    zip_path = f"{EXPORT_PATH}/{title}.zip"
 
-    z = zipfile.ZipFile(zipPath, "w", zipfile.ZIP_DEFLATED)
+    z = zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED)
 
-    for file in glob.glob("*.json"):
-        # NOTE: this also will skip search_toc.json since it ends in `toc.json`
-        if file.endswith("calendar.json") or file.endswith("toc.json") or file.endswith("last_updated.json") or file.endswith("hebrew_categories.json"):
-            continue
+    for file in glob.glob(f"./{title}*.json"):
         z.write(file)
         os.remove(file)
     z.close()
-
-    return
 
 
 def export_texts(skip_existing=False):
@@ -223,13 +201,15 @@ def export_texts(skip_existing=False):
     TODO -- check history and last_updated to only export texts with changes
     """
     indexes = model.library.all_index_records()
-    for index in reversed(indexes):
-        print(index.title)
+    for index in tqdm(reversed(indexes), desc='export all', total=len(indexes), file=sys.stdout):
         if skip_existing and os.path.isfile("%s/%s.zip" % (EXPORT_PATH, index.title)):
             continue
+
+        start_time = time.time()
         success = export_text(index)
         if not success:
             indexes.remove(index)
+        tqdm.write(f"--- {index.title} - {round(time.time() - start_time, 2)} seconds ---")
 
     write_last_updated([i.title for i in indexes])
 
@@ -281,7 +261,7 @@ def export_updated():
             print("Skipping update for non-existent book '{}'".format(t))
 
     updated_books = [x.title for x in updated_indexes]
-    for index in updated_indexes:
+    for index in tqdm(updated_indexes, desc='export updated'):
         success = export_text(index)
         if not success:
             updated_books.remove(index.title) # don't include books which dont export
@@ -339,18 +319,8 @@ def has_updated(title, last_updated):
     return False
 
 
-def get_default_versions(index):
-    vdict = {}
-    versions = index.versionSet().array()
-
-    i = 0
-    while ('he' not in vdict or 'en' not in vdict) and i < len(versions):
-        v = versions[i]
-        if v.language not in vdict:
-            vdict[v.language] = v
-        i += 1
-
-    return vdict
+def should_include_all_versions(index):
+    return index.get_primary_corpus() == "Tanakh"
 
 
 def export_text_json(index):
@@ -360,33 +330,43 @@ def export_text_json(index):
 
     returns True if export was successful
     """
-    # print(index.title)
-    defaultVersions = get_default_versions(index)
-
     try:
-        index_text = TextAndLinksForIndex(index)
+        index_exporter = IndexExporter(index, include_all_versions=should_include_all_versions(index))
         for oref in index.all_top_section_refs():
             if oref.is_section_level():
                 # depth 2 (or 1?)
-                doc = index_text.section_data(oref, defaultVersions)
+                text_by_version, metadata = index_exporter.section_data(oref)
             else:
                 sections = oref.all_subrefs()
-                doc = {
+                metadata = {
                     "ref": oref.normal(),
-                    "sections": {}
+                    "sections": {},
                 }
+                text_by_version = defaultdict(lambda: {
+                    "ref": oref.normal(),
+                    "sections": {},
+                })
                 for section in sections:
                     if section.is_section_level():
                         # depth 3
-                        doc["sections"][section.normal()] = index_text.section_data(section, defaultVersions)
+                        # doc["sections"][section.normal()]
+                        curr_text_by_version, curr_metadata = index_exporter.section_data(section)
+                        metadata["sections"][section.normal()] = curr_metadata
+                        for vtitle, text_array in curr_text_by_version.items():
+                            text_by_version[vtitle]["sections"][section.normal()] = text_array
                     else:
                         # depth 4
                         real_sections = section.all_subrefs()
                         for real_section in real_sections:
-                            doc["sections"][real_section.normal()] = index_text.section_data(real_section, defaultVersions)
+                            curr_text_by_version, curr_metadata = index_exporter.section_data(real_section)
+                            metadata["sections"][real_section.normal()] = curr_metadata
+                            for vtitle, text_array in curr_text_by_version.items():
+                                text_by_version[vtitle]["sections"][real_section.normal()] = text_array
 
-            path = make_path(doc, "json")
-            write_doc(doc, path)
+            for (vtitle, lang), data in text_by_version.items():
+                path = make_path(vtitle, lang, metadata['ref'])
+                write_doc(data, path)
+            write_doc(metadata, f"{EXPORT_PATH}/{metadata['ref']}.metadata.json")
         return True
 
     except OSError as e:
@@ -401,6 +381,15 @@ def export_text_json(index):
         print("Error exporting %s: %s" % (index.title, e))
         print(traceback.format_exc())
         return False
+
+
+def get_version_hash(version_title):
+    import hashlib
+    return hashlib.md5(version_title.encode()).hexdigest()[:8]
+
+
+def make_path(version_title, lang, tref):
+    return f"{EXPORT_PATH}/{tref}.{get_version_hash(version_title)}.{lang}.json"
 
 
 def simple_link(link):
@@ -418,182 +407,86 @@ def simple_link(link):
     return simple
 
 
-"""
-For each index:
-Load all leaf nodes.
-For each leaf node, load a jaggedArray. Map full node title to jaggedArray
-for oref in index.all_top_section_refs():
-    node_title = r.index_node.full_title()
-    the specific piece of the jaggedArray can be obtained with ja.get_element(oref.sections)
-"""
+class SimpleTextChunk:
+
+    def __init__(self, oref: model.Ref, version: Version):
+        self.version = version
+        text_array = self.get_text_array_from_version(oref)
+        self.ja = JaggedTextArray(text_array)
+
+    def get_text_array_from_version(self, oref: model.Ref):
+        text_array, _, _ = self.version.get_node_by_key_list(oref.index_node.version_address())
+        return text_array
+
+    def is_empty(self) -> bool:
+        return self.ja.is_empty()
 
 
-class SortedLinks:
-    """
-    This class is supposed to support making a single large db lookup for links, then to dish them out bit by bit for
-    each section.
-    This algorithm doesn't seem to quite give the same results as calling wrapper.get_links directly on a smaller Ref.
-    The speedup given so far doesn't seem to be worth the effort in perfecting this, but we'll keep it here in case
-    something of this nature is required in the future.
-    """
-    def __init__(self, index_obj: model.Index):
-        self.index_obj = index_obj
-        self.node_numbers = {node.full_title(): j for j, node in enumerate(index_obj.nodes.get_leaf_nodes())}
-        self.link_iter = iter(self.get_sorted_links())
-        self._next_link = self.safe_next(self.link_iter)
+class IndexExporter:
 
-    def sort_key(self, tref):
-        oref = model.Ref(tref)
-        return [self.node_numbers[oref.index_node.full_title()]] + oref.sections
-
-    def get_sorted_links(self):
-        return sorted(get_links(self.index_obj.title, False, False), key=lambda x: self.sort_key(x['anchorRef']))
-
-    def get_matching_links(self, tref: str) -> list:
-        if self._next_link is None:
-            return []
-
-        oref = model.Ref(tref)
-        reg = re.compile(oref.regex())
-        link_list = []
-        while self._next_link and reg.match(self._next_link['anchorRef']):
-            link_list.append(self._next_link)
-            self._next_link = self.safe_next(self.link_iter)
-
-        return link_list
-
-    @staticmethod
-    def safe_next(iterator):
-        try:
-            return next(iterator)
-        except StopIteration:
-            return None
-
-
-class TextAndLinksForIndex:
-
-    def __init__(self, index_obj: model.Index):
+    def __init__(self, index_obj: model.Index, include_all_versions=False):
         self._text_map = {}
         self.version_state = index_obj.versionState()
         leaf_nodes = index_obj.nodes.get_leaf_nodes()
+        all_versions = VersionSet({"title": index_obj.title})
+
         for leaf in leaf_nodes:
             oref = leaf.ref()
-            en_chunk, he_chunk = oref.text('en'), oref.text('he')
+            if include_all_versions:
+                simple_chunks = [SimpleTextChunk(oref, v) for v in all_versions]
+            else:
+                default_versions = [self.get_default_version_by_lang(all_versions, lang) for lang in ('en', 'he')]
+                default_versions = [v for v in default_versions if v is not None]
+                simple_chunks = [SimpleTextChunk(oref, v) for v in default_versions]
+            simple_chunks = [c for c in simple_chunks if not c.is_empty()]
+
             self._text_map[leaf.full_title()] = {
-                'en_chunk': en_chunk,
-                'he_chunk': he_chunk,
-                'en_ja': en_chunk.ja(),
-                'he_ja': he_chunk.ja()
+                'chunks': simple_chunks,
+                'all_versions': all_versions,
+                'jas': [c.ja for c in simple_chunks],
             }
-        # self.sorted_links = SortedLinks(index_obj)
 
-    def section_data(self, oref: model.Ref, default_versions: dict) -> dict:
+
+    @staticmethod
+    def get_default_version_by_lang(versions: list, lang: str):
         """
-        :param oref: section level Ref instance
-        :param default_versions: {'en': Version, 'he': Version}
-        :param prev_next: tuple, with the oref before oref and after oref (or None if this is the first/last ref)
-        Returns a dictionary with all the data we care about for section level `oref`.
+        Default is first version that matches `lang`
         """
-        prev, next_ref = oref.prev_section_ref(vstate=self.version_state),\
-                         oref.next_section_ref(vstate=self.version_state)
+        return next((v for v in versions if v.language == lang), None)
 
-        data = {
-            "ref": oref.normal(),
-            "heRef": oref.he_normal(),
-            "indexTitle": oref.index.title,
-            "heTitle": oref.index.get_title('he'),
-            "sectionRef": oref.normal(),
-            "next":    next_ref.normal() if next_ref else None,
-            "prev": prev.normal() if prev else None,
-            "content": [],
-        }
+    @staticmethod
+    def get_text_array_from_ja(sections, ja):
+        if sections:
+            try:
+                return ja.get_element([j-1 for j in sections])
+            except IndexError:
+                return []
+        else:
+            # Ref(Pesach Haggadah, Kadesh) does not have sections, although it is a section ref
+            return ja.array()
 
-        def get_version_title(chunk):
-            if not chunk.is_merged:
-                version = chunk.version()
-                if version and version.language in default_versions and version.versionTitle != default_versions[version.language].versionTitle:
-                    #print "VERSION NOT DEFAULT {} ({})".format(oref, chunk.lang)
-                    try:
-                        vnotes = version.versionNotes
-                    except AttributeError:
-                        vnotes = None
-                    try:
-                        vlicense = version.license
-                    except AttributeError:
-                        vlicense = None
-                    try:
-                        vsource = version.versionSource
-                    except AttributeError:
-                        vsource = None
-                    try:
-                        vnotesInHebrew = version.versionNotesInHebrew
-                    except AttributeError:
-                        vnotesInHebrew = None
-                    try:
-                        versionTitleInHebrew = version.versionTitleInHebrew
-                    except AttributeError:
-                        versionTitleInHebrew = None
+    @staticmethod
+    def strip_itags_recursive(text_array):
+        if isinstance(text_array, str):
+            return TextChunk.strip_itags(text_array)
+        else:
+            return [IndexExporter.strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
 
-                    return version.versionTitle, vnotes, vlicense, vsource, versionTitleInHebrew, vnotesInHebrew
-                else:
-                    return None, None, None, None, None, None # default version
-            else:
-                #merged
-                #print "MERGED SECTION {} ({})".format(oref, chunk.lang)
-                all_versions = set(chunk.sources)
-                merged_version = 'Merged from {}'.format(', '.join(all_versions))
-                return merged_version, None, None, None, None, None
+    @staticmethod
+    def serialize_version_details(version):
+        return {'versionTitle': version.versionTitle, 'language': version.language}
 
-        def get_text_array(sections, ja_lang):
-            if sections:
-                try:
-                    return self._text_map[node_title][ja_lang].get_element([j-1 for j in sections])
-                except IndexError:
-                    return []
-            else:  # Ref(Pesach Haggadah, Kadesh) does not have sections, although it is a section ref
-                return self._text_map[node_title][ja_lang].array()
+    def serialize_all_version_details(self, versions):
+        return [self.serialize_version_details(version) for version in versions]
 
-        def strip_itags_recursive(text_array):
-            if isinstance(text_array, str):
-                return TextChunk.strip_itags(text_array)
-            else:
-                return [strip_itags_recursive(sub_text_array) for sub_text_array in text_array]
+    @staticmethod
+    def pad_array_to_index(array, index):
+        while len(array) != index - 1:
+            array.append(None)
+        return array
 
-        node_title = oref.index_node.full_title()
-        en_chunk, he_chunk = self._text_map[node_title]['en_chunk'], self._text_map[node_title]['en_chunk']
-        en_vtitle, en_vnotes, en_vlicense, en_vsource, en_vtitle_he, en_vnotes_he = get_version_title(en_chunk)
-        he_vtitle, he_vnotes, he_vlicense, he_vsource, he_vtitle_he, he_vnotes_he = get_version_title(he_chunk)
-
-        if en_vtitle:
-            data['versionTitle'] = en_vtitle
-        if he_vtitle:
-            data['heVersionTitle'] = he_vtitle
-        if en_vnotes:
-            data['versionNotes'] = en_vnotes
-        if he_vnotes:
-            data['heVersionNotes'] = he_vnotes
-        if en_vlicense:
-            data['license'] = en_vlicense
-        if he_vlicense:
-            data['heLicense'] = he_vlicense
-        if en_vsource:
-            data['versionSource'] = en_vsource
-        if he_vsource:
-            data['heVersionSource'] = he_vsource
-        if en_vtitle_he:
-            data['versionTitleInHebrew'] = en_vtitle_he
-        if he_vtitle_he:
-            data['heVersionTitleInHebrew'] = he_vtitle_he
-        if en_vnotes_he:
-            data['versionNotesInHebrew'] = en_vnotes_he
-        if he_vnotes_he:
-            data['heVersionNotesInHebrew'] = he_vnotes_he
-
-        en_text = strip_itags_recursive(get_text_array(oref.sections, 'en_ja'))
-        he_text = strip_itags_recursive(get_text_array(oref.sections, 'he_ja'))
-
-        en_len = len(en_text)
-        he_len = len(he_text)
+    @staticmethod
+    def _get_anchor_ref_dict(oref, section_length):
         section_links = get_links(oref.normal(), False)
         anchor_ref_dict = defaultdict(list)
         for link in section_links:
@@ -603,82 +496,87 @@ class TextAndLinksForIndex:
             start_seg_num = anchor_oref.sections[-1]
             # make sure sections are the same in range
             # TODO doesn't deal with links that span sections
-            end_seg_num = anchor_oref.toSections[-1] if anchor_oref.sections[0] == anchor_oref.toSections[0] else max(en_len, he_len)
+            end_seg_num = anchor_oref.toSections[-1] if anchor_oref.sections[0] == anchor_oref.toSections[0] else section_length
             for x in range(start_seg_num, end_seg_num+1):
                 anchor_ref_dict[x] += [simple_link(link)]
+        return anchor_ref_dict
+
+    @staticmethod
+    def _get_base_file_name(tref, version_title):
+        return f"{tref}.{get_version_hash(version_title)}.json"
+
+    def section_data(self, oref: model.Ref):
+        """
+        :param oref: section level Ref instance
+        :param prev_next: tuple, with the oref before oref and after oref (or None if this is the first/last ref)
+        Returns a dictionary with all the data we care about for section level `oref`.
+        """
+        prev, next_ref = oref.prev_section_ref(vstate=self.version_state),\
+                         oref.next_section_ref(vstate=self.version_state)
+
+        node_title = oref.index_node.full_title()
+        metadata = {
+            "ref": oref.normal(),
+            "heRef": oref.he_normal(),
+            "indexTitle": oref.index.title,
+            "heTitle": oref.index.get_title('he'),
+            "sectionRef": oref.normal(),
+            "next": next_ref.normal() if next_ref else None,
+            "prev": prev.normal() if prev else None,
+            "versions": self.serialize_all_version_details(self._text_map[node_title]['all_versions'])
+        }
+
+        jas = self._text_map[node_title]['jas']
+        text_arrays = [
+            self.strip_itags_recursive(self.get_text_array_from_ja(oref.sections, ja)) for ja in jas
+        ]
+
+        section_length = max(len(a) for a in text_arrays)
+        anchor_ref_dict = self._get_anchor_ref_dict(oref, section_length)
         offset = oref._get_offset([sec-1 for sec in oref.sections])
-        for x in range (0, max(en_len, he_len)):
-            curContent = {}
-            curContent["segmentNumber"] = str(x+1+offset)
+        text_serialized_list = [[] for _ in text_arrays]
+        links_serialized = []
+        for x in range(0, section_length):
+            curr_seg_num = x + offset + 1
             links = anchor_ref_dict[x+1]
             if len(links) > 0:
-                curContent["links"] = links
+                links_serialized = self.pad_array_to_index(links_serialized, curr_seg_num)
+                links_serialized += [links]
 
-            if x < en_len:
-                curContent["text"] = en_text[x]
-            if x < he_len:
-                curContent["he"] = he_text[x]
+            for iarray, text_array in enumerate(text_arrays):
+                if x >= len(text_array):
+                    continue
+                serialized_array = text_serialized_list[iarray]
+                self.pad_array_to_index(serialized_array, curr_seg_num)
+                serialized_array.append(text_array[x])
+        metadata['links'] = links_serialized
 
-            data["content"] += [curContent]
+        text_by_version = {}
+        chunks = self._text_map[node_title]['chunks']
+        for i, serialized_text in enumerate(text_serialized_list):
+            vdeets = self.get_version_details(chunks[i])
+            if len(serialized_text) == 0:
+                # this version is empty for this section. remove it.
+                metadata['versions'].remove({'versionTitle': vdeets[0], 'language': vdeets[1]})
+                continue
+            text_by_version[vdeets] = serialized_text
+        return text_by_version, metadata
 
-        return data
+    @staticmethod
+    def get_version_details(chunk: SimpleTextChunk):
+        version = chunk.version
+        return version.versionTitle, version.language
 
 
 def export_index(index):
     """
     Writes the JSON of the index record of the text called `title`.
-    TODO - this function should probably take index as a parameter
     """
     try:
-        index_counts = index.contents_with_content_counts()
-        default_versions = get_default_versions(index)
-
-        if 'en' in default_versions:
-            index_counts['versionTitle'] = default_versions['en'].versionTitle
-            try:
-                index_counts['versionNotes'] = default_versions['en'].versionNotes
-            except AttributeError:
-                pass
-            try:
-                index_counts['license'] = default_versions['en'].license
-            except AttributeError:
-                pass
-            try:
-                index_counts['versionSource'] = default_versions['en'].versionSource
-            except AttributeError:
-                pass
-            try:
-                index_counts['versionTitleInHebrew'] = default_versions['en'].versionTitleInHebrew
-            except AttributeError:
-                pass
-            try:
-                index_counts['versionNotesInHebrew'] = default_versions['en'].versionNotesInHebrew
-            except AttributeError:
-                pass
-        if 'he' in default_versions:
-            index_counts['heVersionTitle'] = default_versions['he'].versionTitle
-            try:
-                index_counts['heVersionNotes'] = default_versions['he'].versionNotes
-            except AttributeError:
-                pass
-            try:
-                index_counts['heLicense'] = default_versions['he'].license
-            except AttributeError:
-                pass
-            try:
-                index_counts['heVersionSource'] = default_versions['he'].versionSource
-            except AttributeError:
-                pass
-            try:
-                index_counts['heVersionTitleInHebrew'] = default_versions['he'].versionTitleInHebrew
-            except AttributeError:
-                pass
-            try:
-                index_counts['heVersionNotesInHebrew'] = default_versions['he'].versionNotesInHebrew
-            except AttributeError:
-                pass
-        path  = "%s/%s_index.json" % (EXPORT_PATH, index.title)
-        write_doc(index_counts, path)
+        serialized_index = index.contents_with_content_counts()
+        annotate_versions_on_index(index.title, serialized_index)
+        path = f"{EXPORT_PATH}/{index.title}_index.json"
+        write_doc(serialized_index, path)
 
         return True
     except OSError:
@@ -689,6 +587,22 @@ def export_index(index):
         print(traceback.format_exc())
 
         return False
+
+
+def annotate_versions_on_index(title, serialized_index: dict):
+    vkeys_to_remove = ['versionTitle', 'versionNotes', 'license', 'versionSource', 'versionTitleInHebrew', 'versionNotesInHebrew']
+    for key in vkeys_to_remove:
+        serialized_index.pop(key, None)
+        he_key = 'he' + key[0].capitalize() + key[1:]
+        serialized_index.pop(he_key, None)
+    serialized_index['versions'] = [v.contents() for v in VersionSet({"title": title}, proj={"chapter": False})]
+
+    # remove empty values
+    for version in serialized_index['versions']:
+        version_items = list(version.items())
+        for key, value in version_items:
+            if isinstance(value, str) and len(value) == 0:
+                version.pop(key, None)
 
 
 def get_indexes_in_category(cats, toc):
@@ -1166,7 +1080,7 @@ def purge_cloudflare_cache(titles):
         titles = [t.title for t in model.library.all_index_records()]
     files = ["%s/%s/%s.zip" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in titles]
     files += ["%s/%s/%s.json" % (CLOUDFLARE_PATH, SCHEMA_VERSION, title) for title in ("toc", "topic_toc", "search_toc", "last_updated", "calendar", "hebrew_categories", "people", "packages")]
-    files += [f'{CLOUDFLARE_PATH}/{SCHEMA_VERSION}/{f}' for f in recursive_listdir('./static/ios-export/6/bundles')]
+    files += [f'{CLOUDFLARE_PATH}/{SCHEMA_VERSION}/{f}' for f in recursive_listdir(f'./static/ios-export/{SCHEMA_VERSION}/bundles')]
     url = 'https://api.cloudflare.com/client/v4/zones/%s/purge_cache' % CLOUDFLARE_ZONE
 
     def send_purge(file_list):
