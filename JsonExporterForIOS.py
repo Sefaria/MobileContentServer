@@ -50,8 +50,8 @@ or
 any section has a version different than the default version
 """
 
+PREV_SCHEMA_VERSION = "6"  # for clearing old bundles so space on disk doesn't run out
 SCHEMA_VERSION = "7"  # alternate versions offline
-EXPORT_PATH = SEFARIA_EXPORT_PATH + "/" + SCHEMA_VERSION
 
 TOC_PATH          = "/toc.json"
 SEARCH_TOC_PATH   = "/search_toc.json"
@@ -60,9 +60,9 @@ HEB_CATS_PATH     = "/hebrew_categories.json"
 PEOPLE_PATH       = "/people.json"
 PACK_PATH         = "/packages.json"
 CALENDAR_PATH     = "/calendar.json"
-LAST_UPDATED_PATH = EXPORT_PATH + "/last_updated.json"
+LAST_UPDATED_PATH = "/last_updated.json"
 MAX_FILE_SIZE = 100e6
-BUNDLE_PATH = f'{EXPORT_PATH}/bundles'
+BUNDLE_PATH = "/bundles"
 
 # TODO these descriptions should be moved to the DB
 # For now, this data also exists in Sefaria-Project/CalendarsPage.jsx
@@ -128,6 +128,18 @@ calendarDescriptions = {
 }
 
 
+def get_export_path(schema_version):
+    return f"{SEFARIA_EXPORT_PATH}/{schema_version}"
+
+
+def get_last_updated_path(schema_version):
+    return get_export_path(schema_version) + LAST_UPDATED_PATH
+
+
+def get_bundle_path(schema_version):
+    return get_export_path(schema_version) + BUNDLE_PATH
+
+
 def keep_directory(func):
     def new_func(*args, **kwargs):
         original_dir = os.getcwd()
@@ -150,8 +162,8 @@ def write_doc(doc, path):
 
 
 @keep_directory
-def os_error_cleanup():
-    os.chdir(EXPORT_PATH)
+def os_error_cleanup(schema_version):
+    os.chdir(get_export_path(schema_version))
     json_files = glob.glob('*.json')
 
     for jf in json_files:
@@ -160,7 +172,7 @@ def os_error_cleanup():
     message = 'OSError during export'
     print(message)
     alert_slack(message, ':redlight:')
-    clear_old_bundles(max_files=0)
+    clear_old_bundles(schema_version, max_files=0)
 
 def alert_slack(message, icon_emoji):
     if DEBUG_MODE:
@@ -183,9 +195,10 @@ def zip_last_text(title):
     Zip up the JSON files of the last text exported into and delete the original JSON files.
     Assumes that all previous JSON files have been deleted and the remaining ones should go in the new zip.
     """
-    os.chdir(EXPORT_PATH)
+    export_path = get_export_path(SCHEMA_VERSION)
+    os.chdir(export_path)
 
-    zip_path = f"{EXPORT_PATH}/{title}.zip"
+    zip_path = f"{export_path}/{title}.zip"
 
     z = zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED)
 
@@ -202,7 +215,7 @@ def export_texts(skip_existing=False):
     """
     indexes = model.library.all_index_records()
     for index in tqdm(reversed(indexes), desc='export all', total=len(indexes), file=sys.stdout):
-        if skip_existing and os.path.isfile("%s/%s.zip" % (EXPORT_PATH, index.title)):
+        if skip_existing and os.path.isfile(f"{get_export_path(SCHEMA_VERSION)}/{index.title}.zip"):
             continue
 
         start_time = time.time()
@@ -241,7 +254,7 @@ def export_updated():
     #edit text, add text, edit text: {"date" : {"$gte": ISODate("2017-01-05T00:42:00")}, "ref" : /^Rashi on Leviticus/} REMOVE NONE INDEXES
     #add link, edit link: {"rev_type": "add link", "new.refs": /^Rashi on Berakhot/} REMOVE NONE INDEXES
     #delete link, edit link: {"rev_type": "add link", "old.refs": /^Rashi on Berakhot/} REMOVE NONE INDEXES
-    if not os.path.exists(LAST_UPDATED_PATH):
+    if not os.path.exists(get_last_updated_path(SCHEMA_VERSION)):
         export_all()
         return
 
@@ -280,9 +293,9 @@ def updated_books_list():
     Returns a list of books that have updated since the last export.
     Returns None is there is no previous last_updated.json
     """
-    if not os.path.exists(LAST_UPDATED_PATH):
+    if not os.path.exists(get_last_updated_path(SCHEMA_VERSION)):
         return None
-    last_updated = json.load(open(LAST_UPDATED_PATH, "rb")).get("titles", {})
+    last_updated = json.load(open(get_last_updated_path(SCHEMA_VERSION), "rb")).get("titles", {})
     updated_books = [x[0] for x in [x for x in list(last_updated.items()) if has_updated(x[0], dateutil.parser.parse(x[1]))]]
     return updated_books
 
@@ -366,13 +379,14 @@ def export_text_json(index):
             for (vtitle, lang), data in text_by_version.items():
                 path = make_path(vtitle, lang, metadata['ref'])
                 write_doc(data, path)
-            write_doc(metadata, f"{EXPORT_PATH}/{metadata['ref']}.metadata.json")
+            write_doc(metadata, f"{get_export_path(SCHEMA_VERSION)}/{metadata['ref']}.metadata.json")
         return True
 
     except OSError as e:
         if e.errno == errno.ENOSPC:
             # disk out of space, try to clean up a little
-            os_error_cleanup()
+            os_error_cleanup(SCHEMA_VERSION)
+            os_error_cleanup(PREV_SCHEMA_VERSION)
             raise OSError
         print("Error exporting %s: %s" % (index.title, e))
         print(traceback.format_exc())
@@ -389,7 +403,7 @@ def get_version_hash(version_title):
 
 
 def make_path(version_title, lang, tref):
-    return f"{EXPORT_PATH}/{tref}.{get_version_hash(version_title)}.{lang}.json"
+    return f"{get_export_path(SCHEMA_VERSION)}/{tref}.{get_version_hash(version_title)}.{lang}.json"
 
 
 def simple_link(link):
@@ -575,12 +589,13 @@ def export_index(index):
     try:
         serialized_index = index.contents_with_content_counts()
         annotate_versions_on_index(index.title, serialized_index)
-        path = f"{EXPORT_PATH}/{index.title}_index.json"
+        path = f"{get_export_path(SCHEMA_VERSION)}/{index.title}_index.json"
         write_doc(serialized_index, path)
 
         return True
     except OSError:
-        os_error_cleanup()
+        os_error_cleanup(SCHEMA_VERSION)
+        os_error_cleanup(PREV_SCHEMA_VERSION)
         raise OSError
     except Exception as e:
         print("Error exporting index for %s: %s" % (index.title, e))
@@ -622,6 +637,7 @@ def get_indexes_in_category(cats, toc):
 
 
 def get_downloadable_packages():
+    export_path = get_export_path(SCHEMA_VERSION)
     toc = clean_toc_nodes(model.library.get_toc())
     packages = [
         {
@@ -701,7 +717,8 @@ def get_downloadable_packages():
                 alert_slack(f"Error in `get_downloadable_packages()`. Full library", ':redlight:')
         size = 0
         for i in indexes:
-            size += os.path.getsize("{}/{}.zip".format(EXPORT_PATH, i)) if os.path.isfile("{}/{}.zip".format(EXPORT_PATH, i)) else 0  # get size in kb. overestimate by 1kb
+            curr_zip_path = f"{export_path}/{i}.zip"
+            size += os.path.getsize(curr_zip_path) if os.path.isfile(curr_zip_path) else 0  # get size in kb. overestimate by 1kb
         if hasCats:
             # only include indexes if not complete library
             p["indexes"] = indexes
@@ -715,11 +732,12 @@ def write_last_updated(titles, update=False):
     Writes to `last_updated.json` the current time stamp for all `titles`.
     :param update: True if you only want to update the file and not overwrite
     """
+    export_path = get_export_path(SCHEMA_VERSION)
     def get_timestamp(title):
-        return datetime.fromtimestamp(os.stat(f'{EXPORT_PATH}/{title}.zip').st_mtime).isoformat()
+        return datetime.fromtimestamp(os.stat(f'{export_path}/{title}.zip').st_mtime).isoformat()
 
     if not titles:
-        titles = filter(lambda x: x.endswith('zip'), os.listdir(EXPORT_PATH))
+        titles = filter(lambda x: x.endswith('zip'), os.listdir(export_path))
         titles = [re.search(r'([^/]+)\.zip$', title).group(1) for title in titles]
 
     last_updated = {
@@ -733,7 +751,7 @@ def write_last_updated(titles, update=False):
     #last_updated["SCHEMA_VERSION"] = SCHEMA_VERSION
     if update:
         try:
-            old_doc = json.load(open(LAST_UPDATED_PATH, "rb"))
+            old_doc = json.load(open(get_last_updated_path(SCHEMA_VERSION), "rb"))
         except IOError:
             old_doc = {"schema_version": 0, "comment": "", "titles": {}}
 
@@ -742,7 +760,7 @@ def write_last_updated(titles, update=False):
         old_doc["titles"].update(last_updated["titles"])
         last_updated = old_doc
 
-    write_doc(last_updated, LAST_UPDATED_PATH)
+    write_doc(last_updated, get_last_updated_path(SCHEMA_VERSION))
 
     if USE_CLOUDFLARE:
         purge_cloudflare_cache(titles)
@@ -750,8 +768,8 @@ def write_last_updated(titles, update=False):
 
 def export_packages(for_sources=False):
     packages = get_downloadable_packages()
-    write_doc(packages, (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + PACK_PATH)
-    write_doc(packages, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + PACK_PATH)
+    write_doc(packages, (SEFARIA_IOS_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + PACK_PATH)
+    write_doc(packages, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + PACK_PATH)
 
 
 def split_list(l, size):
@@ -794,14 +812,14 @@ def build_split_archive(book_list, build_loc, export_dir='', archive_size=MAX_FI
 
 
 @keep_directory
-def clear_old_bundles(max_files=50):
+def clear_old_bundles(schema_version, max_files=50):
     """
     This method will check the bundles directory and clean out old bundles (this would be updates that aren't being used)
     :param old_age: bundles not served in this number of days will be deleted
     :param max_files: if less than this many files exist, nothing will happen
     :return:
     """
-    os.chdir(BUNDLE_PATH)
+    os.chdir(get_bundle_path(schema_version))
     # get packages
     with open('../packages.json') as fp:
         packages = json.load(fp)
@@ -819,14 +837,14 @@ def clear_old_bundles(max_files=50):
 
 
 @keep_directory
-def zip_packages():
+def zip_packages(schema_version):
     packages = get_downloadable_packages()
-    bundle_path = BUNDLE_PATH
+    bundle_path = get_bundle_path(schema_version)
     if not os.path.isdir(bundle_path):
         os.mkdir(bundle_path)
 
     curdir = os.getcwd()
-    os.chdir(EXPORT_PATH)
+    os.chdir(get_export_path(schema_version))
 
     for package in packages:
         package_name = package['en']
@@ -855,14 +873,14 @@ def export_hebrew_categories(for_sources=False):
             print("Couldn't load term '{}'. Skipping Hebrew category".format(e))
         else:
             hebrew_cats_json[e] = t.titles[1]['text']
-    write_doc(hebrew_cats_json, (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + HEB_CATS_PATH)
-    write_doc(hebrew_cats_json, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + HEB_CATS_PATH)
+    write_doc(hebrew_cats_json, (SEFARIA_IOS_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + HEB_CATS_PATH)
+    write_doc(hebrew_cats_json, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + HEB_CATS_PATH)
 
 
 def export_topic_toc(for_sources=False):
     topic_toc = model.library.get_topic_toc_json_recursive(with_descriptions=True)
-    write_doc(topic_toc, (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + TOPIC_TOC_PATH)
-    write_doc(topic_toc, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + TOPIC_TOC_PATH)
+    write_doc(topic_toc, (SEFARIA_IOS_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + TOPIC_TOC_PATH)
+    write_doc(topic_toc, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + TOPIC_TOC_PATH)
 
 def clean_toc_nodes(toc):
     """
@@ -896,10 +914,10 @@ def export_toc(for_sources=False):
     new_search_toc = model.library.get_search_filter_toc()
     new_new_toc = clean_toc_nodes(new_toc)
     new_new_search_toc = clean_toc_nodes(new_search_toc)
-    write_doc(new_new_toc, (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + TOC_PATH)
-    write_doc(new_new_search_toc, (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + SEARCH_TOC_PATH)
-    write_doc(new_new_toc, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + TOC_PATH)
-    write_doc(new_new_search_toc, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + SEARCH_TOC_PATH)
+    write_doc(new_new_toc, (SEFARIA_IOS_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + TOC_PATH)
+    write_doc(new_new_search_toc, (SEFARIA_IOS_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + SEARCH_TOC_PATH)
+    write_doc(new_new_toc, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + TOC_PATH)
+    write_doc(new_new_search_toc, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + SEARCH_TOC_PATH)
 
 
 def new_books_since_last_update():
@@ -920,7 +938,8 @@ def new_books_since_last_update():
                 print("Bad Toc item skipping {}".format(temp_toc))
         return books
 
-    last_updated = json.load(open(LAST_UPDATED_PATH, 'rb')) if os.path.exists(LAST_UPDATED_PATH) else {"titles": {}}
+    last_updated_path = get_last_updated_path(SCHEMA_VERSION)
+    last_updated = json.load(open(last_updated_path, 'rb')) if os.path.exists(last_updated_path) else {"titles": {}}
     old_books = list(last_updated["titles"].keys())
     new_books = get_books(new_toc, set())
 
@@ -1025,9 +1044,9 @@ def export_calendar(for_sources=False):
                         curr_cal[pkey] += [p]
         calendar[dt.date().isoformat()] = curr_cal
 
-    path = (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + CALENDAR_PATH
+    path = (SEFARIA_IOS_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + CALENDAR_PATH
     write_doc(calendar, path)
-    write_doc(calendar, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + CALENDAR_PATH)
+    write_doc(calendar, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + CALENDAR_PATH)
 
 
 def export_authors(for_sources=False):
@@ -1036,17 +1055,17 @@ def export_authors(for_sources=False):
     for person in ps:
         for title in person.titles:
             people[title["text"].lower()] = 1
-    path = (SEFARIA_IOS_SOURCES_PATH if for_sources else EXPORT_PATH) + PEOPLE_PATH
+    path = (SEFARIA_IOS_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + PEOPLE_PATH
     write_doc(people, path)
-    write_doc(people, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else EXPORT_PATH) + PEOPLE_PATH)
+    write_doc(people, (SEFARIA_ANDROID_SOURCES_PATH if for_sources else get_export_path(SCHEMA_VERSION)) + PEOPLE_PATH)
 
 
-def clear_exports():
+def clear_exports(schema_version):
     """
     Deletes all files from any export directory listed in export_formats.
     """
-    if os.path.exists(EXPORT_PATH):
-        rmtree(EXPORT_PATH)
+    if os.path.exists(get_export_path(schema_version)):
+        rmtree(get_export_path(schema_version))
 
 
 def recursive_listdir(path):
@@ -1130,10 +1149,10 @@ def export_base_files_to_sources():
 
 
 @keep_directory
-def clear_bundles():
+def clear_bundles(schema_version):
     curdir = os.getcwd()
     try:
-        os.chdir(BUNDLE_PATH)
+        os.chdir(get_bundle_path(schema_version))
     except FileNotFoundError:
         return
     for f in os.listdir('.'):
@@ -1153,8 +1172,9 @@ if __name__ == '__main__':
             return
         else:
             purged = True
-            clear_bundles()
-            zip_packages()
+            for schema_version in (SCHEMA_VERSION, PREV_SCHEMA_VERSION):
+                clear_bundles(schema_version)
+                zip_packages(schema_version)
     # we've been experiencing many issues with strange books appearing in the toc. i believe this line should solve that
     model.library.rebuild_toc()
     action = sys.argv[1] if len(sys.argv) > 1 else None
@@ -1199,7 +1219,7 @@ if __name__ == '__main__':
     except KeyError:
         print('slack url not configured')
         sys.exit(0)
-    timestamp = datetime.fromtimestamp(os.stat(f'{EXPORT_PATH}/last_updated.json').st_mtime).ctime()
+    timestamp = datetime.fromtimestamp(os.stat(f'{get_export_path(SCHEMA_VERSION)}/last_updated.json').st_mtime).ctime()
     alert_slack(f'Mobile export complete. Timestamp on `last_updated.json` is {timestamp}', ':file_folder')
 
 
