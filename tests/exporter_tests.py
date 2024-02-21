@@ -25,16 +25,15 @@ def test_num_chunks(simple_index_exporter, all_version_index_exporter):
     ['Job', 'Job 17', False, 2],
     ['Job', 'Job 17', True, 15],
     ['Derashat Shabbat HaGadol', 'Derashat Shabbat HaGadol 1', False, 1],
-    ['Malbim Beur Hamilot on Nahum', 'Malbim Beur Hamilot on Nahum 1:1', True, 1],
+    ['Malbim Beur Hamilot on Nahum', 'Malbim Beur Hamilot on Nahum 1:1', False, 1],
 ])
 def test_section_data(title, tref, include_all_versions, expected_num_versions):
     index = library.get_index(title)
     exporter = jefi.IndexExporter(index, include_all_versions)
     oref = Ref(tref)
-    num_versions = len(index.versionSet()) if expected_num_versions is None else expected_num_versions
     num_segments = len(oref.all_segment_refs())
     text_by_version, metadata = exporter.section_data(oref)
-    assert len(text_by_version) == num_versions
+    assert len(text_by_version) == expected_num_versions
     for key, value in text_by_version.items():
         assert len(value) <= num_segments
         vtitle, lang = key
@@ -62,3 +61,12 @@ def test_remove_empty_versions():
     test_vtitle, test_lang = 'Sefaria Community Translation', 'en'
     assert (test_vtitle, test_lang) not in text_by_version
     assert next((v for v in metadata['versions'] if v['versionTitle'] == test_vtitle and v['language'] == test_lang), None) is None
+
+
+# Currently just for enabling easy debugging of export_text_json
+@pytest.mark.parametrize(('title',), [
+    ['Malbim Beur Hamilot on Nahum'],
+])
+def test_export_text_json(title):
+    index = library.get_index(title)
+    exported = jefi.export_text_json(index)
