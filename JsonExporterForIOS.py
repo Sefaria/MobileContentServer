@@ -449,9 +449,8 @@ class IndexExporter:
             if include_all_versions:
                 simple_chunks = [SimpleTextChunk(oref, v) for v in all_versions]
             else:
-                default_versions = [self.get_default_version_by_lang(all_versions, lang) for lang in ('en', 'he')]
-                default_versions = [v for v in default_versions if v is not None]
-                simple_chunks = [SimpleTextChunk(oref, v) for v in default_versions]
+                simple_chunks = [self.get_default_chunk_by_lang(all_versions, lang, oref) for lang in ('en', 'he')]
+                simple_chunks = [v for v in simple_chunks if v is not None]
             simple_chunks = [c for c in simple_chunks if not c.is_empty()]
 
             self._text_map[leaf.full_title()] = {
@@ -462,11 +461,15 @@ class IndexExporter:
 
 
     @staticmethod
-    def get_default_version_by_lang(versions: list, lang: str):
+    def get_default_chunk_by_lang(versions: list, lang: str, oref: model.Ref):
         """
         Default is first version that matches `lang`
         """
-        return next((v for v in versions if v.language == lang), None)
+        for v in versions:
+            if v.language == lang:
+                chunk = SimpleTextChunk(oref, v)
+                if not chunk.is_empty():
+                    return chunk
 
     @staticmethod
     def get_text_array_from_ja(sections, ja):
