@@ -21,16 +21,16 @@ def test_num_chunks(simple_index_exporter, all_version_index_exporter):
     assert len(all_version_index_exporter._text_map['Job']['chunks']) > 2
     
 
-@pytest.mark.parametrize(('title', 'tref', 'include_all_versions', 'expected_num_versions'), [
-    ['Job', 'Job 17', False, 2],
-    ['Job', 'Job 17', True, 15],
-    ['Derashat Shabbat HaGadol', 'Derashat Shabbat HaGadol 1', False, 1],
-    ['Malbim Beur Hamilot on Nahum', 'Malbim Beur Hamilot on Nahum 1:1', False, 1],
+@pytest.mark.parametrize(('tref', 'include_all_versions', 'expected_num_versions'), [
+    ['Job 17', False, 2],
+    ['Job 17', True, 15],
+    ['Derashat Shabbat HaGadol 1', False, 1],
+    ['Malbim Beur Hamilot on Nahum 1:1', False, 1],
 ])
-def test_section_data(title, tref, include_all_versions, expected_num_versions):
-    index = library.get_index(title)
-    exporter = jefi.IndexExporter(index, include_all_versions)
+def test_section_data(tref, include_all_versions, expected_num_versions):
     oref = Ref(tref)
+    index = oref.index
+    exporter = jefi.IndexExporter(index, include_all_versions)
     num_segments = len(oref.all_segment_refs())
     text_by_version, metadata = exporter.section_data(oref)
     assert len(text_by_version) == expected_num_versions
