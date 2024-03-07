@@ -1,4 +1,5 @@
 import sys
+from typing import Iterable
 import os
 try:
     import re2 as re
@@ -430,7 +431,7 @@ class SimpleTextChunk:
 
     def get_text_array_from_version(self, oref: model.Ref):
         text_array, _, _ = self.version.get_node_by_key_list(oref.index_node.version_address())
-        return text_array
+        return IndexExporter.get_text_array_from_ja(oref.sections, JaggedTextArray(text_array))
 
     def is_empty(self) -> bool:
         return self.ja.is_empty()
@@ -439,29 +440,12 @@ class SimpleTextChunk:
 class IndexExporter:
 
     def __init__(self, index_obj: model.Index, include_all_versions=False):
-        self._text_map = {}
         self.version_state = index_obj.versionState()
-        leaf_nodes = index_obj.nodes.get_leaf_nodes()
-        all_versions = VersionSet({"title": index_obj.title})
-
-        for leaf in leaf_nodes:
-            oref = leaf.ref()
-            if include_all_versions:
-                simple_chunks = [SimpleTextChunk(oref, v) for v in all_versions]
-            else:
-                simple_chunks = [self.get_default_chunk_by_lang(all_versions, lang, oref) for lang in ('en', 'he')]
-                simple_chunks = [v for v in simple_chunks if v is not None]
-            simple_chunks = [c for c in simple_chunks if not c.is_empty()]
-
-            self._text_map[leaf.full_title()] = {
-                'chunks': simple_chunks,
-                'all_versions': all_versions,
-                'jas': [c.ja for c in simple_chunks],
-            }
-
+        self.all_versions = VersionSet({"title": index_obj.title})
+        self.include_all_versions = include_all_versions
 
     @staticmethod
-    def get_default_chunk_by_lang(versions: list, lang: str, oref: model.Ref):
+    def get_default_chunk_by_lang(versions: Iterable, lang: str, oref: model.Ref):
         """
         Default is first version that matches `lang`
         """
@@ -531,7 +515,16 @@ class IndexExporter:
         prev, next_ref = oref.prev_section_ref(vstate=self.version_state),\
                          oref.next_section_ref(vstate=self.version_state)
 
-        node_title = oref.index_node.full_title()
+        all_section_chunks = [c for c in [SimpleTextChunk(oref, v) for v in self.all_versions] if not c.is_empty()]
+        if self.include_all_versions:
+            section_chunks = all_section_chunks
+        else:
+            section_chunks = [self.get_default_chunk_by_lang([c.version for c in all_section_chunks], lang, oref) for lang in ('en', 'he')]
+            section_chunks = [c for c in section_chunks if c is not None]
+        jas = [c.ja for c in section_chunks]
+        text_arrays = [
+            self.strip_itags_recursive(ja.array()) for ja in jas
+        ]
         metadata = {
             "ref": oref.normal(),
             "heRef": oref.he_normal(),
@@ -540,13 +533,8 @@ class IndexExporter:
             "sectionRef": oref.normal(),
             "next": next_ref.normal() if next_ref else None,
             "prev": prev.normal() if prev else None,
-            "versions": self.serialize_all_version_details(self._text_map[node_title]['all_versions'])
+            "versions": self.serialize_all_version_details([c.version for c in all_section_chunks])
         }
-
-        jas = self._text_map[node_title]['jas']
-        text_arrays = [
-            self.strip_itags_recursive(self.get_text_array_from_ja(oref.sections, ja)) for ja in jas
-        ]
 
         section_length = max(len(a) for a in text_arrays)
         anchor_ref_dict = self._get_anchor_ref_dict(oref, section_length)
@@ -569,9 +557,8 @@ class IndexExporter:
         metadata['links'] = links_serialized
 
         text_by_version = {}
-        chunks = self._text_map[node_title]['chunks']
         for i, serialized_text in enumerate(text_serialized_list):
-            vdeets = self.get_version_details(chunks[i])
+            vdeets = self.get_version_details(section_chunks[i])
             if len(serialized_text) == 0:
                 # this version is empty for this section. remove it.
                 metadata['versions'].remove({'versionTitle': vdeets[0], 'language': vdeets[1]})
