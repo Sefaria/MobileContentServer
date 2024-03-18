@@ -536,7 +536,7 @@ class IndexExporter:
             "versions": self.serialize_all_version_details([c.version for c in all_section_chunks])
         }
 
-        section_length = max(len(a) for a in text_arrays)
+        section_length = max([len(a) for a in text_arrays], default=0)
         anchor_ref_dict = self._get_anchor_ref_dict(oref, section_length)
         offset = oref._get_offset([sec-1 for sec in oref.sections])
         text_serialized_list = [[] for _ in text_arrays]
