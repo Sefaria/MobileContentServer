@@ -67,4 +67,6 @@ steps:
       - copy_sefaria_settings
       - copy_local_settings
       - mobilecontent_container
+options:
+  logging: CLOUD_LOGGING_ONLY
 ...
