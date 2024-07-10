@@ -12,7 +12,7 @@ RUN git clone https://github.com/Sefaria/Sefaria-Project --branch ${sefariaProje
 
 # requirements.txt from Sefaria-Project
 # COPY ./Sefaria-Project/requirements.txt /Sefaria-Project/requirements.txt
-RUN pip3 install --no-cache-dir -r /Sefaria-Project/requirements.txt --use-feature=2020-resolver
+RUN pip3 install --no-cache-dir -r /Sefaria-Project/requirements.txt
 
 # requirements.txt from MobileContentServer
 COPY ./requirements.txt /MobileContentServer/requirements.txt
