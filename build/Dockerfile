@@ -16,7 +16,7 @@ RUN pip3 install --no-cache-dir -r /Sefaria-Project/requirements.txt
 
 # requirements.txt from MobileContentServer
 COPY ./requirements.txt /MobileContentServer/requirements.txt
-RUN pip3 install --no-cache-dir -r /MobileContentServer/requirements.txt --use-feature=2020-resolver
+RUN pip3 install --no-cache-dir -r /MobileContentServer/requirements.txt
 
 RUN mkdir -p /Sefaria-Project/log
 
