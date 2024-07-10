@@ -16,7 +16,7 @@ substitutions:
 
 steps:
   -
-  - name: gcr.io/kaniko-project/executor:v1.23.0
+  - name: gcr.io/kaniko-project/executor
     args: 
       - --context=dir://.
       - --dockerfile=build/Dockerfile
