@@ -15,7 +15,6 @@ substitutions:
   _SEFARIA_PROJECT_BRANCH: master
 
 steps:
-  -
   - name: gcr.io/kaniko-project/executor
     args: 
       - --context=dir://.
