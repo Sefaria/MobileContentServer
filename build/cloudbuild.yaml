@@ -67,8 +67,8 @@ steps:
         gcloud auth configure-docker us-east1-docker.pkg.dev -q
 
         # Fetch kube credentials into the shared kubeconfig
-        gcloud container clusters get-credentials "${_GKE_CLUSTER_NAME}" \
-          --zone "${_GKE_ZONE}" --project $PROJECT_ID
+        gcloud container clusters get-credentials "${_GKE_CLUSTER}" \
+          --region "${_GKE_REGION}" --project $PROJECT_ID
 
         # Sanity check
         kubectl get ns
@@ -82,7 +82,7 @@ steps:
           -f "./app_settings/mobile_content/values.${_ENV_NAME}.yaml"
     env:
       - 'CLOUDSDK_COMPUTE_ZONE=${_GKE_REGION}'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER_NAME}'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}'
       - 'KUBECTL_VERSION=1.14'
       - 'KUBECONFIG=/root/.kube/config'
       - 'USE_GKE_GCLOUD_AUTH_PLUGIN=True'
