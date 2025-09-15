@@ -55,6 +55,7 @@ steps:
 
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: deploy
+    dir: k8s-admin/v2
     entrypoint: bash
     args:
       - -ceu
