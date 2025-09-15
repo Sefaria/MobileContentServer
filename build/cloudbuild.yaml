@@ -74,7 +74,6 @@ steps:
         kubectl get ns
         helm version
 
-    #args: [, '-f', './app_settings/mobile_content/values.${_ENV_NAME}.yaml', '--debug' ]
         # Run your upgrade/install
         helm upgrade -i "mobiledownloader-${_ENV_NAME}" "./charts/mobile-content" \
           --namespace "${_GKE_NAMESPACE}" \
