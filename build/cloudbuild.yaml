@@ -31,7 +31,7 @@ steps:
     wait_for: [ "-" ]
 
   # We can later change the local_settings file based on the environment
-  - name: "gcr.io/production-deployment/cloudbuild-helm:v3.1.2"
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: copy_local_settings
     dir: k8s-admin/v2
     entrypoint: cp
@@ -39,7 +39,7 @@ steps:
     wait_for:
       - k8s-admin_clone
 
-  - name: "gcr.io/production-deployment/cloudbuild-helm:v3.1.2"
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: copy_sefaria_settings
     dir: k8s-admin/v2
     entrypoint: cp
@@ -47,21 +47,46 @@ steps:
     wait_for:
       - k8s-admin_clone
 
-  - name: "gcr.io/production-deployment/cloudbuild-helm:v3.1.2"
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: debug_print
     dir: k8s-admin/v2
     entrypoint: cat
     args: [ "./app_settings/mobile_content/values.${_ENV_NAME}.yaml" ]
 
-  - name: "gcr.io/production-deployment/cloudbuild-helm:v3.1.2"
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     id: deploy
-    dir: k8s-admin/v2
-    args: ['upgrade', '-i', 'mobiledownloader-${_ENV_NAME}', './charts/mobile-content', '--namespace', '${_GKE_NAMESPACE}', '--set-string', 'deployEnv=${_ENV_NAME},mobileDownload.subdomain=${_SUBDOMAIN},mobileDownload.image.serverImage=us-east1-docker.pkg.dev/${PROJECT_ID}/containers/mobile-content-${_ENV_NAME},mobileDownload.image.serverReleaseTag=${BUILD_ID},mobileDownload.secrets.passwordKey=${_SHARED_TOKEN}', '-f', './app_settings/mobile_content/values.${_ENV_NAME}.yaml', '--debug' ]
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        # Install helm quickly
+        apt-get update -y && apt-get install -y curl ca-certificates
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+        # (Optional) auth for Artifact Registry pulls, if your chart uses images from AR
+        gcloud auth configure-docker us-east1-docker.pkg.dev -q
+
+        # Fetch kube credentials into the shared kubeconfig
+        gcloud container clusters get-credentials "${_GKE_CLUSTER_NAME}" \
+          --zone "${_GKE_ZONE}" --project $PROJECT_ID
+
+        # Sanity check
+        kubectl get ns
+        helm version
+
+    #args: [, '-f', './app_settings/mobile_content/values.${_ENV_NAME}.yaml', '--debug' ]
+        # Run your upgrade/install
+        helm upgrade -i "mobiledownloader-${_ENV_NAME}" "./charts/mobile-content" \
+          --namespace "${_GKE_NAMESPACE}" \
+          --debug \
+          --set-string=deployEnv=${_ENV_NAME},mobileDownload.subdomain=${_SUBDOMAIN},mobileDownload.image.serverImage=us-east1-docker.pkg.dev/${PROJECT_ID}/containers/mobile-content-${_ENV_NAME},mobileDownload.image.serverReleaseTag=${BUILD_ID},mobileDownload.secrets.passwordKey=${_SHARED_TOKEN} \
+          -f "./app_settings/mobile_content/values.${_ENV_NAME}.yaml"
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=${_GKE_REGION}'
-      - 'CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER}'
+      - 'CLOUDSDK_COMPUTE_ZONE=${_GKE_ZONE}'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER_NAME}'
       - 'KUBECTL_VERSION=1.14'
       - 'KUBECONFIG=/root/.kube/config'
+      - 'USE_GKE_GCLOUD_AUTH_PLUGIN=True'
     wait_for:
       - k8s-admin_clone
       - copy_sefaria_settings
