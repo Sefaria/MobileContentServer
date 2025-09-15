@@ -81,7 +81,7 @@ steps:
           --set-string=deployEnv=${_ENV_NAME},mobileDownload.subdomain=${_SUBDOMAIN},mobileDownload.image.serverImage=us-east1-docker.pkg.dev/${PROJECT_ID}/containers/mobile-content-${_ENV_NAME},mobileDownload.image.serverReleaseTag=${BUILD_ID},mobileDownload.secrets.passwordKey=${_SHARED_TOKEN} \
           -f "./app_settings/mobile_content/values.${_ENV_NAME}.yaml"
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=${_GKE_ZONE}'
+      - 'CLOUDSDK_COMPUTE_ZONE=${_GKE_REGION}'
       - 'CLOUDSDK_CONTAINER_CLUSTER=${_GKE_CLUSTER_NAME}'
       - 'KUBECTL_VERSION=1.14'
       - 'KUBECONFIG=/root/.kube/config'
