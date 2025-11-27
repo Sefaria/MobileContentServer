@@ -20,6 +20,8 @@ RUN pip3 install --no-cache-dir -r /MobileContentServer/requirements.txt
 
 RUN mkdir -p /Sefaria-Project/log
 
+RUN python3 /Sefaria-Project/manage.py migrate remote_config
+
 COPY ./ /MobileContentServer
 WORKDIR /MobileContentServer
 
