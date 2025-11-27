@@ -20,12 +20,10 @@ RUN pip3 install --no-cache-dir -r /MobileContentServer/requirements.txt
 
 RUN mkdir -p /Sefaria-Project/log
 
-RUN python3 /Sefaria-Project/manage.py migrate remote_config
-
 COPY ./ /MobileContentServer
 WORKDIR /MobileContentServer
 
 ENV FLASK_APP /MobileContentServer/DownloadServer.py
 EXPOSE 80
 
-ENTRYPOINT ["gunicorn", "--log-level", "debug", "--bind", "0.0.0.0:80", "wsgi:app"]
+ENTRYPOINT ["sh", "-c", "python /Sefaria-Project/manage.py migrate && gunicorn --log-level debug --bind 0.0.0.0:80 wsgi:app"]
