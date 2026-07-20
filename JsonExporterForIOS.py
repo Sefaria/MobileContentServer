@@ -334,7 +334,7 @@ def has_updated(title, last_updated):
 
 
 def should_include_all_versions(index):
-    return index.get_primary_corpus() == "Tanakh"
+    return True
 
 
 def export_text_json(index):
