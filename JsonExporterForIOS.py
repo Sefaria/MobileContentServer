@@ -334,7 +334,11 @@ def has_updated(title, last_updated):
 
 
 def should_include_all_versions(index):
-    return index.get_primary_corpus() == "Tanakh"
+    # Previously only Tanakh-corpus books exported all of their versions; every other
+    # book shipped just the first non-empty version per language. This exports all
+    # versions for all books, adding roughly 110 MB compressed to the Complete Library
+    # package (~1.25 GB -> ~1.36 GB).
+    return True
 
 
 def export_text_json(index):
