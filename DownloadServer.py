@@ -2,9 +2,7 @@
 
 import os
 import threading
-import shutil
 import hashlib
-from datetime import datetime
 from local_settings import *
 from JsonExporterForIOS import build_split_archive, SEFARIA_EXPORT_PATH, get_export_path, updated_books_list, new_books_since_last_update, clear_old_bundles, SCHEMA_VERSION, PREV_SCHEMA_VERSION
 from flask import Flask, request, Response, jsonify
@@ -38,32 +36,31 @@ def get_directory_size(dir_path):
     return total
 
 
+# Bundles whose build is running right now, keyed by bundle name.  A request
+# that arrives while the same bundle is building must not start a second build.
+_builds_in_progress = set()
+_builds_in_progress_lock = threading.Lock()
+
+
 def create_zip_bundle(book_list, zip_path, zip_dirname, file_locations):
     # thread safety is critical in this method.
-    def is_recent_dir(dirname):  # this method should only return False if the directory in question exists and is "old"
-        try:
-            s = os.stat(dirname)
-        except FileNotFoundError:
-            return True
-
-        diff = datetime.now() - datetime.fromtimestamp(s.st_mtime)
-        return diff.total_seconds() < 120
-
-    try:
-        os.mkdir('./tmp')
-    except FileExistsError:
-        pass
-
-    tmp_dir = f'./tmp/{zip_dirname}'
-    if os.path.exists(tmp_dir):
-        if is_recent_dir(tmp_dir):
+    with _builds_in_progress_lock:
+        if zip_dirname in _builds_in_progress or os.path.exists(zip_path):
             return
+        _builds_in_progress.add(zip_dirname)
 
-    build_split_archive(book_list, tmp_dir, file_locations)
     try:
-        shutil.move(tmp_dir, zip_path)
-    except FileNotFoundError:  # can theoretically happen if another thread is active
-        return
+        # The build directory must be on the same filesystem as zip_path, so
+        # that publishing the finished bundle is one atomic rename instead of a
+        # slow copy that a later request can delete while it runs.  It sits
+        # beside the per-book zips in file_locations, outside the served
+        # bundles directory, so it is never listed as a bundle.
+        tmp_dir = f'{file_locations}/.tmp-{zip_dirname}'
+        build_split_archive(book_list, tmp_dir, file_locations)
+        os.replace(tmp_dir, zip_path)
+    finally:
+        with _builds_in_progress_lock:
+            _builds_in_progress.discard(zip_dirname)
 
 
 def get_schema_from_request(req):
