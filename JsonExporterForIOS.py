@@ -64,6 +64,8 @@ CALENDAR_PATH     = "/calendar.json"
 LAST_UPDATED_PATH = "/last_updated.json"
 MAX_FILE_SIZE = 100e6
 BUNDLE_PATH = "/bundles"
+# seconds a bundle is kept after it was built, so a client that is downloading it keeps its files
+BUNDLE_DOWNLOAD_GRACE_SECONDS = 6 * 60 * 60
 
 # TODO these descriptions should be moved to the DB
 # For now, this data also exists in Sefaria-Project/CalendarsPage.jsx
@@ -809,7 +811,8 @@ def build_split_archive(book_list, build_loc, export_dir='', archive_size=MAX_FI
 def clear_old_bundles(schema_version, max_files=50):
     """
     This method will check the bundles directory and clean out old bundles (this would be updates that aren't being used)
-    :param old_age: bundles not served in this number of days will be deleted
+    The oldest bundles are deleted first, and a bundle built within BUNDLE_DOWNLOAD_GRACE_SECONDS is never deleted,
+    because a client can still be downloading its files. max_files=0 deletes every bundle that is not a package.
     :param max_files: if less than this many files exist, nothing will happen
     :return:
     """
@@ -822,8 +825,19 @@ def clear_old_bundles(schema_version, max_files=50):
     bundles = [s for s in os.listdir('.') if s not in packages]
     if len(bundles) < max_files:
         return
-    # for each package if old, delete
-    for bundle in bundles:
+
+    def bundle_mtime(bundle):
+        try:
+            return os.path.getmtime(bundle)
+        except OSError:
+            return 0
+
+    # delete the oldest bundles, and leave room for the bundle that is being created
+    now = time.time()
+    keep = max(max_files - 1, 0)
+    for bundle in sorted(bundles, key=bundle_mtime)[:len(bundles) - keep]:
+        if max_files > 0 and now - bundle_mtime(bundle) < BUNDLE_DOWNLOAD_GRACE_SECONDS:
+            continue  # a client can still be downloading this bundle
         try:
             rmtree(bundle)
         except FileNotFoundError:
