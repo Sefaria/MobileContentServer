@@ -25,10 +25,26 @@ def url_stubs(bundle_path, schema_version):
     bundle_name = os.path.basename(bundle_path)
     try:
         values = [f'{URL_BASE}/{schema_version}/bundles/{bundle_name}/{f}' for f in os.listdir(bundle_path)]
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):  # no such bundle, or a bundle name that is a file
         values = []
     values.sort()
     return values
+
+
+def get_bundle_dir(base_path, package_name):
+    """Return the bundle directory named by package_name, or None if that name is not a bundle inside base_path.
+
+    Bundle names come from the client: a package title from packages.json, or the sha1 name that makeBundle
+    built. Both are a single path component, so a value with a separator, with a "." or ".." component, or
+    that resolves outside base_path is not a bundle and must not be listed.
+    """
+    if not package_name or package_name in ('.', '..') or os.path.basename(package_name) != package_name:
+        return None
+    base_dir = os.path.realpath(base_path)
+    bundle_path = os.path.realpath(os.path.join(base_dir, package_name))
+    if os.path.dirname(bundle_path) != base_dir:
+        return None
+    return bundle_path
 
 
 def get_directory_size(dir_path):
@@ -101,12 +117,15 @@ def make_bundle():
 
 @app.route('/packageData', methods=['GET'])
 def get_package_paths():
-    if not request.args or not request.args.get('package'):
+    package_name = request.args.get('package')
+    if not package_name:
         return jsonify([])
-    package_name = request.args['package']
     schema_version = get_schema_from_request(request)
     base_path = f'{SEFARIA_EXPORT_PATH}/{schema_version}/bundles'
-    return jsonify(url_stubs(f'{base_path}/{package_name}', schema_version))
+    bundle_path = get_bundle_dir(base_path, package_name)
+    if bundle_path is None:
+        return jsonify([])
+    return jsonify(url_stubs(bundle_path, schema_version))
 
 
 def get_bundle_filename(book_list: list) -> str:
