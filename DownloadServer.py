@@ -1,7 +1,9 @@
 # encoding=utf-8
 
 import os
+import sys
 import threading
+import subprocess
 import shutil
 import hashlib
 from datetime import datetime
@@ -19,6 +21,22 @@ except ImportError:
 DEFAULT_API_SCHEMA_VERSION = "6"
 app = Flask(__name__)
 URL_BASE = 'static/ios-export'
+
+# Keep in sync with the action names in the __main__ block of JsonExporterForIOS.py.
+EXPORT_ACTIONS = frozenset({
+    'export_all',
+    'export_all_skip_existing',
+    'export_text',
+    'export_updated',
+    'purge_cloudflare',
+    'export_toc',
+    'export_hebrew_categories',
+    'export_calendar',
+    'export_authors',
+    'export_base_files_to_sources',
+    'export_packages',
+    'write_last_updated',
+})
 
 
 def url_stubs(bundle_path, schema_version):
@@ -132,8 +150,19 @@ def update():
     if user_password != password:
         return Response(status=403, response='Forbidden')
     action, index = request.args.get('action', default='export_updated'), request.args.get('index', default='')
-    os.system(f'python JsonExporterForIOS.py {action} {index} &')
+    if action not in EXPORT_ACTIONS:
+        return Response(status=400, response='Unknown action')
+    start_export(action, index)
     return {'status': 'ok'}
+
+
+def start_export(action, index):
+    command = [sys.executable, 'JsonExporterForIOS.py', action]
+    if index:
+        command.append(index)
+    process = subprocess.Popen(command, cwd=os.path.dirname(os.path.abspath(__file__)))
+    # Gunicorn reaps only its workers, so this thread reaps the exporter when it exits.
+    threading.Thread(target=process.wait, daemon=True).start()
 
 
 @app.route('/booksExport', methods=['GET', 'POST'])
@@ -146,7 +175,13 @@ def books_export():
         return jsonify(updated_books_list() + new_books_since_last_update())
     elif request.method == 'POST':
         f = request.args.get('filename')
-        FileStorage(request.stream).save(os.path.join(get_export_path(SCHEMA_VERSION), f))
+        if not f:
+            return Response(status=400, response='Missing filename')
+        export_dir = os.path.realpath(get_export_path(SCHEMA_VERSION))
+        destination = os.path.realpath(os.path.join(export_dir, f))
+        if os.path.dirname(destination) != export_dir:
+            return Response(status=400, response='Invalid filename')
+        FileStorage(request.stream).save(destination)
         return Response(status=200, response='ok')
 
 
